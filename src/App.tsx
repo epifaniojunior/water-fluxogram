@@ -17,14 +17,15 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { 
   X, Droplets, Gauge, Waves, Beaker, Ban, Activity, 
-  FileText, Copy, Droplet, Trash2, Plus, Zap, ArrowDown, MoveRight, Layers, Download, Upload, Clock, Database, ShieldAlert
+  FileText, Copy, Droplet, Trash2, Plus, Zap, ArrowDown, MoveRight, Layers, Download, Upload, Clock, Database, ShieldAlert, Cloud, CloudOff, RefreshCw
 } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v1.2.7'; 
-const STORAGE_KEY = 'fluxo_agua_v77_deso';
+const DEV_VERSION = 'v1.4.1'; 
+const STORAGE_KEY = 'fluxo_agua_v81_deso';
 
 const globalStyles = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -42,6 +43,17 @@ const globalStyles = `
   }
   .node-selected-pulse { animation: glowPulse 2s infinite; border-color: #3b82f6 !important; }
 `;
+
+// Função auxiliar para gerar ID único (UUID)
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
 
 const NodeCustomizado = memo(({ data, selected }: any) => {
   const icons: any = { 
@@ -76,8 +88,27 @@ const FlowContent = () => {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [modoEdicao, setModoEdicao] = useState(false);
   const [selecionado, setSelecionado] = useState<any>(null);
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
+  const [supabaseConfigured] = useState(() => isSupabaseConfigured());
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  const projetosRef = useRef(projetos);
+
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+  useEffect(() => { projetosRef.current = projetos; }, [projetos]);
+
+  const addDebugLog = useCallback((msg: string) => {
+    const time = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [`[${time}] ${msg}`, ...prev].slice(0, 10));
+    console.log(`[Supabase Debug] ${msg}`);
+  }, []);
   
   const isDragging = useRef(false);
+  const nodeOffsetRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const globalBackupRef = useRef<HTMLInputElement>(null);
   const { setCenter, fitView, deleteElements, fitBounds, getViewport } = useReactFlow();
@@ -120,15 +151,77 @@ const FlowContent = () => {
   }, [totalSelecionado, nodesSelecionados, edgesSelecionadas]);
 
   useEffect(() => {
-    const salvo = localStorage.getItem(STORAGE_KEY);
-    if (salvo) {
-      const parsed = JSON.parse(salvo);
-      setProjetos(parsed);
-      if (parsed.length > 0) setProjetoAtivoId(parsed[0].id);
-    } else {
-      const inicial = { id: 'p1', nome: 'SISTEMA DESO 01', nodes: [], edges: [] };
-      setProjetos([inicial]); setProjetoAtivoId('p1');
-    }
+    const carregarProjetos = async () => {
+      if (!supabaseConfigured) {
+        console.warn('Supabase não configurado. Usando localStorage.');
+        const salvo = localStorage.getItem(STORAGE_KEY);
+        if (salvo) {
+          const parsed = JSON.parse(salvo);
+          setProjetos(parsed);
+          if (parsed.length > 0) setProjetoAtivoId(parsed[0].id);
+        } else {
+          const inicial = { id: `p_${Date.now()}`, nome: 'SISTEMA DESO 01', nodes: [], edges: [] };
+          setProjetos([inicial]);
+          setProjetoAtivoId(inicial.id);
+        }
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('projetos')
+          .select('*')
+          .order('updated_at', { ascending: false });
+
+        if (error) {
+          // Se for erro de tabela inexistente
+          if (error.code === 'PGRST116' || error.message.includes('relation "projetos" does not exist')) {
+            setSupabaseError('Tabela "projetos" não encontrada no Supabase. Crie a tabela para usar a nuvem.');
+          } else {
+            setSupabaseError(`Erro Supabase: ${error.message}`);
+          }
+          throw error;
+        }
+
+        setSupabaseError(null);
+        if (data && data.length > 0) {
+          setProjetos(data);
+          if (data[0].id) setProjetoAtivoId(data[0].id);
+        } else {
+          // Se não houver projetos no Supabase, tenta migrar do localStorage ou cria um inicial
+          const salvo = localStorage.getItem(STORAGE_KEY);
+          if (salvo) {
+            const parsed = JSON.parse(salvo);
+            setProjetos(parsed);
+            if (parsed.length > 0) setProjetoAtivoId(parsed[0].id);
+          } else {
+            const inicial = { id: generateUUID(), nome: 'SISTEMA DESO 01', nodes: [], edges: [], updated_at: new Date().toISOString() };
+            const { data: novoData, error: novoError } = await supabase
+              .from('projetos')
+              .insert([inicial])
+              .select();
+            
+            if (novoError) throw novoError;
+            if (novoData) {
+              setProjetos(novoData);
+              setProjetoAtivoId(novoData[0].id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao carregar do Supabase:', err);
+        setSyncStatus('error');
+        // Fallback para localStorage em caso de erro crítico de conexão
+        const salvo = localStorage.getItem(STORAGE_KEY);
+        if (salvo) {
+          const parsed = JSON.parse(salvo);
+          setProjetos(parsed);
+          if (parsed.length > 0) setProjetoAtivoId(parsed[0].id);
+        }
+      }
+    };
+
+    carregarProjetos();
   }, []);
 
   useEffect(() => {
@@ -140,19 +233,68 @@ const FlowContent = () => {
     }
   }, [projetoAtivoId, setNodes, setEdges, fitView]);
 
-  const salvarNoStorage = useCallback(() => {
+  const salvarNoSupabase = useCallback(async () => {
     if (!projetoAtivoId) return;
-    setProjetos(prev => {
-      const novaLista = prev.map(p => p.id === projetoAtivoId ? { ...p, nodes, edges } : p);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(novaLista));
-      return novaLista;
-    });
-  }, [nodes, edges, projetoAtivoId]);
+    
+    const currentNodes = nodesRef.current;
+    const currentEdges = edgesRef.current;
+    const currentProjetos = projetosRef.current;
 
+    const projetoAtual = currentProjetos.find(p => p.id === projetoAtivoId);
+    if (!projetoAtual) return;
+
+    if (!supabaseConfigured) {
+      const novaLista = currentProjetos.map(p => p.id === projetoAtivoId ? { ...p, nodes: currentNodes, edges: currentEdges } : p);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(novaLista));
+      return;
+    }
+
+    setSyncStatus('syncing');
+    addDebugLog(`Sincronizando: ${projetoAtual.nome}`);
+    
+    try {
+      const payload = { 
+        id: projetoAtivoId, 
+        nome: projetoAtual.nome,
+        nodes: currentNodes, 
+        edges: currentEdges, 
+        updated_at: new Date().toISOString() 
+      };
+
+      const { error, data, status, statusText } = await supabase
+        .from('projetos')
+        .upsert(payload, { onConflict: 'id' })
+        .select();
+
+      if (error) {
+        addDebugLog(`ERRO: ${error.message}`);
+        throw error;
+      }
+      
+      if (data && data.length > 0) {
+        addDebugLog(`Nuvem atualizada: ${data[0].nome}`);
+        setSupabaseError(null);
+        setSyncStatus('synced');
+      } else {
+        setSyncStatus('synced'); 
+      }
+    } catch (err: any) {
+      addDebugLog(`FALHA: ${err.message}`);
+      setSupabaseError(`Erro na nuvem: ${err.message || 'Erro de conexão'}`);
+      setSyncStatus('error');
+    }
+    
+    const novaLista = currentProjetos.map(p => p.id === projetoAtivoId ? { ...p, nodes: currentNodes, edges: currentEdges } : p);
+    setProjetos(novaLista);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(novaLista));
+  }, [projetoAtivoId, supabaseConfigured, addDebugLog]);
+
+  // Sincronização automática apenas para mudanças nos elementos (nodes/edges)
   useEffect(() => {
-    const timer = setTimeout(salvarNoStorage, 500);
+    if (nodes.length === 0 && edges.length === 0) return;
+    const timer = setTimeout(salvarNoSupabase, 3000);
     return () => clearTimeout(timer);
-  }, [nodes, edges, salvarNoStorage]);
+  }, [nodes, edges, salvarNoSupabase]);
 
   const fecharPainel = useCallback(() => {
     setSelecionado(null);
@@ -160,17 +302,23 @@ const FlowContent = () => {
     setEdges(eds => eds.map(e => ({ ...e, selected: false })));
   }, [setNodes, setEdges]);
 
-  const excluirSelecaoTotal = useCallback(() => {
+  const excluirSelecaoTotal = useCallback(async () => {
     deleteElements({ nodes: nodesSelecionados, edges: edgesSelecionadas });
     fecharPainel();
   }, [deleteElements, nodesSelecionados, edgesSelecionadas, fecharPainel]);
 
   const adicionarNo = (tipo: string, label: string, cor: string) => {
     const id = `node_${Date.now()}`;
+    const spacing = 25;
+    const currentOffset = (nodeOffsetRef.current % 10) * spacing;
+    
     const newNode = {
-      id, type: 'custom', position: { x: 450, y: 250 }, 
+      id, type: 'custom', 
+      position: { x: 450 + currentOffset, y: 250 + currentOffset }, 
       data: { label, nodeId: '', detalhes: '', tipo, cor },
     };
+    
+    nodeOffsetRef.current += 1;
     setNodes((nds) => nds.concat(newNode));
     setTimeout(() => centralizarNoPalcoUtil([newNode]), 50);
   };
@@ -234,17 +382,42 @@ const FlowContent = () => {
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const importado = JSON.parse(event.target.result as string);
         if (Array.isArray(importado) && importado.length > 0) {
+          setSyncStatus('syncing');
+          
+          // Se o Supabase estiver configurado, tentamos sincronizar todos os projetos importados
+          if (supabaseConfigured) {
+            console.log('Iniciando sincronização de backup global com Supabase...');
+            const { error } = await supabase
+              .from('projetos')
+              .upsert(importado.map(p => ({
+                ...p,
+                updated_at: new Date().toISOString()
+              })));
+            
+            if (error) {
+              console.error('Erro ao sincronizar backup com Supabase:', error);
+              alert("Backup carregado localmente, mas houve erro ao sincronizar com a nuvem: " + error.message);
+              setSyncStatus('error');
+            } else {
+              console.log('Backup global sincronizado com sucesso no Supabase.');
+              setSyncStatus('synced');
+            }
+          }
+
           setProjetos(importado);
           setProjetoAtivoId(importado[0].id);
           alert("Backup Global restaurado com sucesso!");
         } else {
           alert("Arquivo de Backup Global inválido.");
         }
-      } catch (err) { alert("Erro ao processar o arquivo de backup."); }
+      } catch (err) { 
+        console.error('Erro ao restaurar backup:', err);
+        alert("Erro ao processar o arquivo de backup."); 
+      }
     };
     reader.readAsText(file);
     if (globalBackupRef.current) globalBackupRef.current.value = '';
@@ -258,7 +431,7 @@ const FlowContent = () => {
       try {
         const importado = JSON.parse(event.target.result as string);
         if (importado.nodes && importado.edges) {
-          const novo = { ...importado, id: `p_imp_${Date.now()}`, nome: `${importado.nome} (IMPORTADO)` };
+          const novo = { ...importado, id: generateUUID(), nome: `${importado.nome} (IMPORTADO)`, updated_at: new Date().toISOString() };
           setProjetos(prev => [...prev, novo]);
           setProjetoAtivoId(novo.id);
         } else { alert("Arquivo JSON inválido."); }
@@ -297,6 +470,44 @@ const FlowContent = () => {
     setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === node.id })));
   }, [centralizarNoPalcoUtil, setNodes]);
 
+  const sincronizarTudoComNuvem = async () => {
+    if (!supabaseConfigured) {
+      alert("Supabase não configurado. Verifique os Secrets.");
+      return;
+    }
+
+    const confirmar = window.confirm("Deseja sincronizar TODOS os sistemas locais com a nuvem? Isso irá sobrescrever dados com o mesmo ID no Supabase.");
+    if (!confirmar) return;
+
+    setSyncStatus('syncing');
+    addDebugLog('Iniciando sincronização manual de todos os projetos...');
+    
+    try {
+      const { error, data, status } = await supabase
+        .from('projetos')
+        .upsert(projetos.map(p => ({
+          ...p,
+          updated_at: new Date().toISOString()
+        })), { onConflict: 'id' })
+        .select();
+
+      if (error) {
+        addDebugLog(`Erro na sincronização manual: ${error.message}`);
+        throw error;
+      }
+      
+      addDebugLog(`Sincronização manual concluída. Status: ${status}. Itens: ${data?.length || 0}`);
+      setSyncStatus('synced');
+      setSupabaseError(null);
+      alert("Sincronização completa! Todos os sistemas foram enviados para a nuvem.");
+    } catch (err: any) {
+      addDebugLog(`Erro na sincronização manual: ${err.message}`);
+      setSyncStatus('error');
+      setSupabaseError(`Erro na sincronização: ${err.message}`);
+      alert("Erro ao sincronizar: " + err.message);
+    }
+  };
+
   const projetoAtivo = projetos.find(p => p.id === projetoAtivoId);
 
   return (
@@ -320,8 +531,35 @@ const FlowContent = () => {
         
         {/* BOTÕES DE TOPO */}
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <button onClick={() => setProjetos([...projetos, { id: `p_${Date.now()}`, nome: 'NOVO SISTEMA', nodes: [], edges: [] }])} style={btnNovoProjeto}>
-            <Plus size={14} /> Novo Sistema
+          <button onClick={async () => {
+            const novo = { 
+              id: generateUUID(),
+              nome: 'NOVO PROJETO', 
+              nodes: [], 
+              edges: [],
+              updated_at: new Date().toISOString()
+            };
+            
+            try {
+              if (supabaseConfigured) {
+                const { data, error } = await supabase.from('projetos').insert([novo]).select();
+                if (error) throw error;
+                if (data && data.length > 0) {
+                  setProjetos(prev => [...prev, data[0]]);
+                  setProjetoAtivoId(data[0].id);
+                  addDebugLog(`Novo projeto criado: ${data[0].nome}`);
+                }
+              } else {
+                setProjetos(prev => [...prev, novo]);
+                setProjetoAtivoId(novo.id);
+                addDebugLog(`Novo projeto local criado`);
+              }
+            } catch (err: any) {
+              addDebugLog(`ERRO ao criar projeto: ${err.message}`);
+              alert(`Erro ao criar novo projeto: ${err.message}`);
+            }
+          }} style={btnNovoProjeto}>
+            <Plus size={14} /> + Novo Projeto
           </button>
           
           <button onClick={() => fileInputRef.current?.click()} style={btnImportar}>
@@ -334,7 +572,15 @@ const FlowContent = () => {
         <div style={{ flexGrow: 1, overflowY: 'auto', padding: '10px 16px' }}>
           <p style={labelSmall}>Sistemas Ativos</p>
           {projetos.map(p => (
-            <div key={p.id} onClick={() => setProjetoAtivoId(p.id)} 
+            <div key={p.id} onClick={() => {
+              if (projetoAtivoId !== p.id) {
+                // Salva o estado atual antes de trocar
+                const currentNodes = nodesRef.current;
+                const currentEdges = edgesRef.current;
+                setProjetos(prev => prev.map(proj => proj.id === projetoAtivoId ? { ...proj, nodes: currentNodes, edges: currentEdges } : proj));
+                setProjetoAtivoId(p.id);
+              }
+            }} 
               style={{ ...itemProjeto, background: projetoAtivoId === p.id ? '#eff6ff' : 'transparent', borderColor: projetoAtivoId === p.id ? '#dbeafe' : 'transparent' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
                 <FileText size={15} color={projetoAtivoId === p.id ? '#3b82f6' : '#94a3b8'} />
@@ -342,8 +588,57 @@ const FlowContent = () => {
               </div>
               <div style={{ display: 'flex', gap: '2px' }}>
                 <button onClick={(e) => { e.stopPropagation(); exportarSistema(p); }} style={btnMini} title="Exportar individual"><Download size={12} /></button>
-                <button onClick={(e) => { e.stopPropagation(); setProjetos([...projetos, { ...p, id: `p_${Date.now()}`, nome: `${p.nome} (CÓPIA)` }]); }} style={btnMini} title="Copiar"><Copy size={12} /></button>
-                <button onClick={(e) => { e.stopPropagation(); if (projetos.length > 1) { const novos = projetos.filter(x => x.id !== p.id); setProjetos(novos); if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id); } }} style={{ ...btnMini, color: '#ef4444' }} title="Apagar"><Trash2 size={12} /></button>
+                <button onClick={(e) => { 
+                  e.stopPropagation(); 
+                  const pCopia = { ...p, id: generateUUID(), nome: `${p.nome} (CÓPIA)`, updated_at: new Date().toISOString() };
+                  
+                  if (supabaseConfigured) {
+                    supabase.from('projetos').insert([pCopia]).select().then(({data, error}) => {
+                      if (error) {
+                        alert(`Erro ao copiar: ${error.message}`);
+                        return;
+                      }
+                      if (data) {
+                        setProjetos([...projetos, data[0]]);
+                        setProjetoAtivoId(data[0].id);
+                      }
+                    });
+                  } else {
+                    setProjetos([...projetos, pCopia]);
+                    setProjetoAtivoId(pCopia.id);
+                  }
+                }} style={btnMini} title="Copiar"><Copy size={12} /></button>
+                <button onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if (projetos.length > 1) { 
+                    const confirmar = window.confirm(`Deseja realmente excluir o sistema "${p.nome}"?`);
+                    if (confirmar) {
+                      if (supabaseConfigured) {
+                        supabase.from('projetos').delete().eq('id', p.id).then(({ error }) => {
+                          if (error) {
+                            alert(`Erro ao excluir na nuvem: ${error.message}`);
+                            return;
+                          }
+                          setProjetos(prev => {
+                            const novos = prev.filter(x => x.id !== p.id); 
+                            if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
+                            return novos;
+                          });
+                          addDebugLog(`Projeto excluído: ${p.nome}`);
+                        });
+                      } else {
+                        setProjetos(prev => {
+                          const novos = prev.filter(x => x.id !== p.id); 
+                          if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
+                          return novos;
+                        });
+                        addDebugLog(`Projeto local excluído: ${p.nome}`);
+                      }
+                    }
+                  } else {
+                    alert("Atenção: Não é possível excluir o último sistema. É necessário ter ao menos um sistema ativo.");
+                  }
+                }} style={{ ...btnMini, color: '#ef4444' }} title="Apagar"><Trash2 size={12} /></button>
               </div>
             </div>
           ))}
@@ -352,15 +647,32 @@ const FlowContent = () => {
         {/* BOTÕES DE BACKUP GLOBAL (PARTE INFERIOR) */}
         <div style={{ padding: '16px', borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
           <p style={{...labelSmall, marginBottom: '10px'}}>Manutenção de Banco</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <button onClick={() => exportarBackupGlobal()} style={btnBackupOp} title="Backup Geral">
-              <Database size={13} /> Backup Total
-            </button>
-            <button onClick={() => globalBackupRef.current?.click()} style={{...btnBackupOp, borderColor: '#fecdd3'}} title="Restaurar Tudo">
-              <ShieldAlert size={13} color="#ef4444" /> Restaurar
-            </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <button onClick={() => exportarBackupGlobal()} style={btnBackupOp} title="Backup Geral">
+                <Database size={13} /> Backup Total
+              </button>
+              <button onClick={() => globalBackupRef.current?.click()} style={{...btnBackupOp, borderColor: '#fecdd3'}} title="Restaurar Tudo">
+                <ShieldAlert size={13} color="#ef4444" /> Restaurar
+              </button>
+            </div>
+            {supabaseConfigured && (
+              <button onClick={sincronizarTudoComNuvem} style={{...btnBackupOp, background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534'}} title="Sincronizar tudo com a nuvem">
+                <RefreshCw size={13} color="#16a34a" /> Sincronizar com Nuvem
+              </button>
+            )}
           </div>
           <input type="file" ref={globalBackupRef} onChange={restaurarBackupGlobal} accept=".json" style={{ display: 'none' }} />
+        </div>
+
+        {/* CONSOLE DE DEPURAÇÃO (DEBUG) */}
+        <div style={{ padding: '12px', borderTop: '1px solid #f1f5f9', background: '#1e293b', color: '#94a3b8', fontSize: '9px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
+          <p style={{ color: '#3b82f6', fontWeight: 800, marginBottom: '5px', fontSize: '10px' }}>LOG DE SINCRONIZAÇÃO</p>
+          {debugLogs.length === 0 ? (
+            <p>Nenhuma atividade registrada.</p>
+          ) : (
+            debugLogs.map((log, i) => <p key={i} style={{ marginBottom: '2px' }}>{log}</p>)
+          )}
         </div>
       </div>
 
@@ -375,9 +687,36 @@ const FlowContent = () => {
               <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b' }}>{projetoAtivo?.nome}</h1>
             )}
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {(!supabaseConfigured || supabaseError) && (
+              <div style={{ background: '#fff7ed', border: '1px solid #ffedd5', padding: '8px 16px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                <ShieldAlert size={16} color="#f97316" />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 800, color: '#9a3412', lineHeight: 1 }}>
+                    {!supabaseConfigured ? 'MODO OFFLINE' : 'ERRO NA NUVEM'}
+                  </span>
+                  <span style={{ fontSize: '9px', fontWeight: 500, color: '#c2410c' }}>
+                    {supabaseError || 'Configure o Supabase nos Secrets para salvar na nuvem.'}
+                  </span>
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '10px' }}>
+              {syncStatus === 'syncing' && <RefreshCw size={14} className="animate-spin" color="#3b82f6" />}
+              {syncStatus === 'synced' && <Cloud size={14} color="#10b981" />}
+              {syncStatus === 'error' && <CloudOff size={14} color="#ef4444" />}
+              <span style={{ fontSize: '10px', fontWeight: 700, color: syncStatus === 'error' ? '#ef4444' : '#64748b' }}>
+                {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? 'Nuvem OK' : 'Erro de Conexão'}
+              </span>
+            </div>
             <button onClick={() => fitView({ duration: 800, padding: 0.4 })} style={btnSecundario}>Visão Geral</button>
-            <button onClick={() => { setModoEdicao(!modoEdicao); fecharPainel(); }} style={{ ...btnPrimario, background: modoEdicao ? '#ef4444' : '#2563eb' }}>
+            <button onClick={() => { 
+              if (modoEdicao) {
+                salvarNoSupabase();
+              }
+              setModoEdicao(!modoEdicao); 
+              fecharPainel(); 
+            }} style={{ ...btnPrimario, background: modoEdicao ? '#ef4444' : '#2563eb' }}>
               {modoEdicao ? 'Salvar Sistema' : 'Modo Edição'}
             </button>
           </div>
