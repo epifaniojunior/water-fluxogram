@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v1.5.4'; 
+const DEV_VERSION = 'v1.5.5'; 
 const STORAGE_KEY = 'fluxo_agua_v87_deso';
 
 const globalStyles = `
@@ -151,6 +151,7 @@ const FlowContent = () => {
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [termoPesquisaProjetos, setTermoPesquisaProjetos] = useState('');
   const [termoPesquisaElementos, setTermoPesquisaElementos] = useState('');
+  const [ordenacao, setOrdenacao] = useState<'nome' | 'data'>('data');
 
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -408,7 +409,8 @@ const FlowContent = () => {
       });
 
       pdf.addImage(dataUrl, 'PNG', 0, 0, flowElement.offsetWidth, flowElement.offsetHeight);
-      pdf.save(`fluxograma-${projetoAtivo?.nome || 'projeto'}.pdf`);
+      const timestamp = gerarTimestamp();
+      pdf.save(`fluxograma-${projetoAtivo?.nome || 'projeto'}-${timestamp}.pdf`);
       
       addDebugLog('PDF gerado com sucesso!');
       setSyncStatus('synced');
@@ -425,24 +427,41 @@ const FlowContent = () => {
     setEdges(eds => eds.map(e => ({ ...e, selected: false })));
   }, [setNodes, setEdges]);
 
-  // Filtragem de projetos (Pesquisa Global em todos os sistemas e elementos)
+  // Filtragem e Ordenação de projetos (Pesquisa Global em todos os sistemas e elementos)
   const projetosFiltrados = useMemo(() => {
-    if (!termoPesquisaProjetos.trim()) return projetos;
-    const termo = termoPesquisaProjetos.toLowerCase();
-    return projetos.filter(p => {
-      // 1. Verifica no nome do projeto
-      if (p.nome.toLowerCase().includes(termo)) return true;
-      
-      // 2. Verifica em todos os nós deste projeto
-      const nodes = p.nodes || [];
-      return nodes.some((n: any) => {
-        const matchLabel = n.data?.label?.toLowerCase().includes(termo);
-        const matchDetalhes = n.data?.detalhes?.toLowerCase().includes(termo);
-        const matchNodeId = n.data?.nodeId?.toLowerCase().includes(termo);
-        return matchLabel || matchDetalhes || matchNodeId;
+    let lista = [...projetos];
+    
+    // Filtragem
+    if (termoPesquisaProjetos.trim()) {
+      const termo = termoPesquisaProjetos.toLowerCase();
+      lista = lista.filter(p => {
+        // 1. Verifica no nome do projeto
+        if (p.nome.toLowerCase().includes(termo)) return true;
+        
+        // 2. Verifica em todos os nós deste projeto
+        const nodes = p.nodes || [];
+        return nodes.some((n: any) => {
+          const matchLabel = n.data?.label?.toLowerCase().includes(termo);
+          const matchDetalhes = n.data?.detalhes?.toLowerCase().includes(termo);
+          const matchNodeId = n.data?.nodeId?.toLowerCase().includes(termo);
+          return matchLabel || matchDetalhes || matchNodeId;
+        });
       });
+    }
+
+    // Ordenação
+    lista.sort((a, b) => {
+      if (ordenacao === 'nome') {
+        return a.nome.localeCompare(b.nome);
+      } else {
+        const dateA = new Date(a.updated_at || 0).getTime();
+        const dateB = new Date(b.updated_at || 0).getTime();
+        return dateB - dateA; // Decrescente (mais recentes primeiro)
+      }
     });
-  }, [projetos, termoPesquisaProjetos]);
+
+    return lista;
+  }, [projetos, termoPesquisaProjetos, ordenacao]);
 
   // Efeito para destacar nós que correspondem à pesquisa de elementos
   useEffect(() => {
@@ -738,6 +757,32 @@ const FlowContent = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <p style={labelSmall}>Sistemas Ativos</p>
             <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{projetosFiltrados.length}</span>
+          </div>
+
+          {/* OPÇÕES DE ORDENAÇÃO */}
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+            <button 
+              onClick={() => setOrdenacao('data')}
+              style={{
+                ...btnMiniSort,
+                background: ordenacao === 'data' ? '#eff6ff' : 'transparent',
+                color: ordenacao === 'data' ? '#2563eb' : '#94a3b8',
+                borderColor: ordenacao === 'data' ? '#dbeafe' : 'transparent'
+              }}
+            >
+              <Clock size={10} style={{marginRight: '4px'}}/> Recentes
+            </button>
+            <button 
+              onClick={() => setOrdenacao('nome')}
+              style={{
+                ...btnMiniSort,
+                background: ordenacao === 'nome' ? '#eff6ff' : 'transparent',
+                color: ordenacao === 'nome' ? '#2563eb' : '#94a3b8',
+                borderColor: ordenacao === 'nome' ? '#dbeafe' : 'transparent'
+              }}
+            >
+              <Activity size={10} style={{marginRight: '4px'}}/> A-Z
+            </button>
           </div>
 
           {projetosFiltrados.map(p => (
@@ -1087,6 +1132,7 @@ const btnNovoProjeto = { width: '100%', padding: '12px', background: '#1e293b', 
 const btnImportar = { width: '100%', padding: '10px', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '10px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' };
 const btnBackupOp = { flex: 1, padding: '10px', background: '#ffffff', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '9px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: 'all 0.2s' };
 const itemProjeto = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 10px', borderRadius: '10px', cursor: 'pointer', marginBottom: '4px', border: '1px solid transparent', transition: 'all 0.2s', overflow: 'hidden' };
+const btnMiniSort = { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 4px', fontSize: '9px', fontWeight: 700, borderRadius: '6px', border: '1px solid transparent', cursor: 'pointer', transition: 'all 0.2s' };
 const btnMini = { background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' };
 const headerStyle = { height: '80px', background: 'white', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', padding: '0 30px', zIndex: 5 };
 const inputHeader = { fontSize: '16px', fontWeight: 700, color: '#1e3a8a', border: 'none', borderBottom: '2px solid #3b82f6', outline: 'none', background: 'transparent', width: '100%', maxWidth: '400px' };
