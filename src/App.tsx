@@ -26,12 +26,12 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v1.5.5'; 
+const DEV_VERSION = 'v1.7.8'; 
 const STORAGE_KEY = 'fluxo_agua_v87_deso';
 
 const globalStyles = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', sans-serif; color: #1e293b; background: #f8fafc; }
+  body { font-family: 'Inter', sans-serif; color: #1e293b; background: #f8fafc; user-select: none; }
   .react-flow__edge-path { stroke-linecap: round; transition: stroke 0.3s, stroke-width 0.3s; stroke-width: 4; }
   .react-flow__edge.selected .react-flow__edge-path { stroke-width: 6; stroke: #1e293b !important; }
   .react-flow__edge-text { fill: #1e293b; font-size: 13px; font-weight: 800; pointer-events: none; }
@@ -144,7 +144,6 @@ const FlowContent = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [modoEdicao, setModoEdicao] = useState(false);
-  const [selecionado, setSelecionado] = useState<any>(null);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
   const [supabaseError, setSupabaseError] = useState<string | null>(null);
   const [supabaseConfigured] = useState(() => isSupabaseConfigured());
@@ -152,6 +151,29 @@ const FlowContent = () => {
   const [termoPesquisaProjetos, setTermoPesquisaProjetos] = useState('');
   const [termoPesquisaElementos, setTermoPesquisaElementos] = useState('');
   const [ordenacao, setOrdenacao] = useState<'nome' | 'data'>('data');
+  const [showModalNovo, setShowModalNovo] = useState(false);
+  const [nomeNovoProjeto, setNomeNovoProjeto] = useState('');
+  const [erroModal, setErroModal] = useState('');
+  const [modalConfig, setModalConfig] = useState<{
+    show: boolean;
+    tipo: 'aviso' | 'confirmacao';
+    titulo: string;
+    mensagem: string | React.ReactNode;
+    onConfirm?: () => void;
+    onCancel?: () => void;
+  }>({ show: false, tipo: 'aviso', titulo: '', mensagem: '' });
+
+  const mostrarAviso = (titulo: string, mensagem: string | React.ReactNode) => {
+    setModalConfig({ show: true, tipo: 'aviso', titulo, mensagem });
+  };
+
+  const mostrarConfirmacao = (titulo: string, mensagem: string | React.ReactNode, onConfirm: () => void) => {
+    setModalConfig({ show: true, tipo: 'confirmacao', titulo, mensagem, onConfirm });
+  };
+
+  const fecharModalGeral = () => {
+    setModalConfig(prev => ({ ...prev, show: false }));
+  };
 
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
@@ -177,6 +199,21 @@ const FlowContent = () => {
   const edgesSelecionadas = useMemo(() => edges.filter(e => e.selected), [edges]);
   const totalSelecionado = nodesSelecionados.length + edgesSelecionadas.length;
 
+  const selecionado = useMemo(() => {
+    if (totalSelecionado > 1) {
+      return { type: 'bulk', count: totalSelecionado, nodeCount: nodesSelecionados.length, edgeCount: edgesSelecionadas.length };
+    } else if (totalSelecionado === 0) {
+      return null;
+    } else if (nodesSelecionados.length === 1) {
+      const node = nodesSelecionados[0];
+      return { type: 'node', id: node.id, data: node.data };
+    } else if (edgesSelecionadas.length === 1) {
+      const edge = edgesSelecionadas[0];
+      return { type: 'edge', id: edge.id, data: edge.data };
+    }
+    return null;
+  }, [totalSelecionado, nodesSelecionados, edgesSelecionadas]);
+
   const centralizarNoPalcoUtil = useCallback((nodesAlvo: any[]) => {
     if (nodesAlvo.length === 0) return;
     const SIDEBAR_WIDTH = 280;
@@ -195,20 +232,13 @@ const FlowContent = () => {
   }, [setCenter, fitBounds, getViewport]);
 
   const onSelectionChange = useCallback((params: any) => {
-    if (params.nodes.length > 0) centralizarNoPalcoUtil(params.nodes);
-  }, [centralizarNoPalcoUtil]);
+    // Removido o zoom automático aqui para não atrapalhar o início do arraste
+  }, []);
 
-  useEffect(() => {
-    if (totalSelecionado > 1) {
-      setSelecionado({ type: 'bulk', count: totalSelecionado, nodeCount: nodesSelecionados.length, edgeCount: edgesSelecionadas.length });
-    } else if (totalSelecionado === 0) {
-      setSelecionado(null);
-    } else if (nodesSelecionados.length === 1) {
-      setSelecionado({ type: 'node', id: nodesSelecionados[0].id, data: nodesSelecionados[0].data });
-    } else if (edgesSelecionadas.length === 1) {
-      setSelecionado({ type: 'edge', id: edgesSelecionadas[0].id, data: edgesSelecionadas[0].data });
-    }
-  }, [totalSelecionado, nodesSelecionados, edgesSelecionadas]);
+  const onSelectionEnd = useCallback(() => {
+    const selectedNodes = nodesRef.current.filter(n => n.selected);
+    if (selectedNodes.length > 0) centralizarNoPalcoUtil(selectedNodes);
+  }, [centralizarNoPalcoUtil]);
 
   useEffect(() => {
     const carregarProjetos = async () => {
@@ -366,14 +396,38 @@ const FlowContent = () => {
     addDebugLog('Gerando PDF...');
 
     try {
+      // 1. Colocar zoom em visão geral
+      fitView({ duration: 0, padding: 0.2 });
+      // Esperar um pouco para o fitView completar
+      await new Promise(resolve => setTimeout(resolve, 300));
+
       // Ocultar controles e painéis para o print
       const controls = document.querySelector('.react-flow__controls') as HTMLElement;
       const attribution = document.querySelector('.react-flow__attribution') as HTMLElement;
-      const panelRight = document.querySelector('.react-flow__panel.top-right') as HTMLElement;
+      const searchBox = document.querySelector('.search-input-container') as HTMLElement;
+      const panels = document.querySelectorAll('.react-flow__panel');
       
       if (controls) controls.style.display = 'none';
       if (attribution) attribution.style.display = 'none';
-      if (panelRight) panelRight.style.display = 'none';
+      if (searchBox) searchBox.parentElement!.style.display = 'none'; // Esconde o Panel que contém a pesquisa
+      panels.forEach(p => (p as HTMLElement).style.display = 'none');
+
+      // Adicionar título temporário no palco
+      const titleDiv = document.createElement('div');
+      titleDiv.innerText = projetoAtivo?.nome || 'PROJETO';
+      titleDiv.style.position = 'absolute';
+      titleDiv.style.top = '70px'; // Mais próximo dos elementos (que ficam centralizados pelo fitView)
+      titleDiv.style.left = '50%';
+      titleDiv.style.transform = 'translateX(-50%)';
+      titleDiv.style.fontSize = '44px'; // Dobro do tamanho anterior (22px * 2)
+      titleDiv.style.fontWeight = '900';
+      titleDiv.style.color = '#0f172a';
+      titleDiv.style.textTransform = 'uppercase';
+      titleDiv.style.letterSpacing = '3px';
+      titleDiv.style.zIndex = '1000';
+      titleDiv.style.textShadow = '0 2px 4px rgba(0,0,0,0.1)';
+      titleDiv.className = 'temp-pdf-title';
+      flowElement.appendChild(titleDiv);
 
       // Forçar estilos de segurança nos labels antes da captura
       const labels = flowElement.querySelectorAll('.react-flow__edge-textbg');
@@ -385,7 +439,7 @@ const FlowContent = () => {
       });
 
       // Delay para estabilização do DOM e renderização dos estilos
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 400));
 
       // Captura usando toPng com configurações de compatibilidade
       const dataUrl = await toPng(flowElement, {
@@ -400,7 +454,12 @@ const FlowContent = () => {
       // Restaura a interface
       if (controls) controls.style.display = 'flex';
       if (attribution) attribution.style.display = 'block';
-      if (panelRight) panelRight.style.display = 'block';
+      if (searchBox) searchBox.parentElement!.style.display = 'block';
+      panels.forEach(p => (p as HTMLElement).style.display = 'block');
+      
+      // Remove título temporário
+      const tempTitle = flowElement.querySelector('.temp-pdf-title');
+      if (tempTitle) tempTitle.remove();
 
       const pdf = new jsPDF({
         orientation: 'landscape',
@@ -419,10 +478,9 @@ const FlowContent = () => {
       addDebugLog('Erro ao gerar PDF');
       setSyncStatus('error');
     }
-  }, [projetoAtivo, addDebugLog]);
+  }, [projetoAtivo, addDebugLog, fitView]);
 
   const fecharPainel = useCallback(() => {
-    setSelecionado(null);
     setNodes(nds => nds.map(n => ({ ...n, selected: false })));
     setEdges(eds => eds.map(e => ({ ...e, selected: false })));
   }, [setNodes, setEdges]);
@@ -546,56 +604,48 @@ const FlowContent = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const confirmar = window.confirm(
-      "⚠️ AVISO DE SEGURANÇA CRÍTICO ⚠️\n\nVocê está prestes a restaurar um BACKUP GLOBAL. " +
-      "Isso irá APAGAR TODOS os sistemas atuais e substituí-los pelo conteúdo deste arquivo.\n\n" +
-      "Esta ação não pode ser desfeita. Deseja continuar?"
+    mostrarConfirmacao(
+      "⚠️ AVISO DE SEGURANÇA CRÍTICO",
+      "Você está prestes a restaurar um BACKUP GLOBAL. Isso irá APAGAR TODOS os sistemas atuais e substituí-los pelo conteúdo deste arquivo. Esta ação não pode ser desfeita. Deseja continuar?",
+      () => {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const importado = JSON.parse(event.target.result as string);
+            if (Array.isArray(importado) && importado.length > 0) {
+              setSyncStatus('syncing');
+              
+              if (supabaseConfigured) {
+                const { error } = await supabase
+                  .from('projetos')
+                  .upsert(importado.map(p => ({
+                    ...p,
+                    updated_at: new Date().toISOString()
+                  })));
+                
+                if (error) {
+                  mostrarAviso("Erro na Nuvem", "Backup carregado localmente, mas houve erro ao sincronizar com a nuvem: " + error.message);
+                  setSyncStatus('error');
+                } else {
+                  setSyncStatus('synced');
+                }
+              }
+
+              setProjetos(importado);
+              setProjetoAtivoId(importado[0].id);
+              mostrarAviso("Sucesso", "Backup Global restaurado com sucesso!");
+            } else {
+              mostrarAviso("Erro", "Arquivo de Backup Global inválido.");
+            }
+          } catch (err) { 
+            console.error('Erro ao restaurar backup:', err);
+            mostrarAviso("Erro", "Erro ao processar o arquivo de backup."); 
+          }
+        };
+        reader.readAsText(file);
+      }
     );
 
-    if (!confirmar) {
-      if (globalBackupRef.current) globalBackupRef.current.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const importado = JSON.parse(event.target.result as string);
-        if (Array.isArray(importado) && importado.length > 0) {
-          setSyncStatus('syncing');
-          
-          // Se o Supabase estiver configurado, tentamos sincronizar todos os projetos importados
-          if (supabaseConfigured) {
-            console.log('Iniciando sincronização de backup global com Supabase...');
-            const { error } = await supabase
-              .from('projetos')
-              .upsert(importado.map(p => ({
-                ...p,
-                updated_at: new Date().toISOString()
-              })));
-            
-            if (error) {
-              console.error('Erro ao sincronizar backup com Supabase:', error);
-              alert("Backup carregado localmente, mas houve erro ao sincronizar com a nuvem: " + error.message);
-              setSyncStatus('error');
-            } else {
-              console.log('Backup global sincronizado com sucesso no Supabase.');
-              setSyncStatus('synced');
-            }
-          }
-
-          setProjetos(importado);
-          setProjetoAtivoId(importado[0].id);
-          alert("Backup Global restaurado com sucesso!");
-        } else {
-          alert("Arquivo de Backup Global inválido.");
-        }
-      } catch (err) { 
-        console.error('Erro ao restaurar backup:', err);
-        alert("Erro ao processar o arquivo de backup."); 
-      }
-    };
-    reader.readAsText(file);
     if (globalBackupRef.current) globalBackupRef.current.value = '';
   };
 
@@ -610,8 +660,8 @@ const FlowContent = () => {
           const novo = { ...importado, id: generateUUID(), nome: `${importado.nome} (IMPORTADO)`, updated_at: new Date().toISOString() };
           setProjetos(prev => [...prev, novo]);
           setProjetoAtivoId(novo.id);
-        } else { alert("Arquivo JSON inválido."); }
-      } catch (err) { alert("Erro ao ler o arquivo."); }
+        } else { mostrarAviso("Erro", "Arquivo JSON inválido."); }
+      } catch (err) { mostrarAviso("Erro", "Erro ao ler o arquivo."); }
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -637,50 +687,198 @@ const FlowContent = () => {
     }));
   }, [setEdges]);
 
-  const onNodeDragStart = useCallback(() => { isDragging.current = true; }, []);
-  const onNodeDragStop = useCallback(() => { setTimeout(() => { isDragging.current = false; }, 100); }, []);
+  const updateBulkNodes = useCallback((changes: any) => {
+    setNodes(nds => nds.map(n => {
+      if (n.selected) {
+        let newNode = { ...n };
+        if (changes.label !== undefined) {
+          newNode.data = { ...newNode.data, label: changes.label };
+        }
+        if (changes.nodeId !== undefined) {
+          newNode.data = { ...newNode.data, nodeId: changes.nodeId };
+        }
+        if (changes.detalhes !== undefined) {
+          newNode.data = { ...newNode.data, detalhes: changes.detalhes };
+        }
+        return newNode;
+      }
+      return n;
+    }));
+  }, [setNodes]);
 
-  const onNodeClick = useCallback((_: any, node: any) => {
-    if (isDragging.current) return;
+  const alinharHorizontal = useCallback(() => {
+    const selectedNodes = nodes.filter(n => n.selected);
+    if (selectedNodes.length < 2) return;
+    
+    // Alinhamento no eixo Y (média)
+    const avgY = selectedNodes.reduce((acc, n) => acc + n.position.y, 0) / selectedNodes.length;
+    
+    // Distribuição no eixo X (equidistante com espaçamento mínimo)
+    const sortedNodes = [...selectedNodes].sort((a, b) => a.position.x - b.position.x);
+    const minX = sortedNodes[0].position.x;
+    const maxX = sortedNodes[sortedNodes.length - 1].position.x;
+    const count = sortedNodes.length;
+    
+    const HORIZONTAL_SPACING = 300; // Largura do nó (210) + margem
+    let step = (maxX - minX) / (count - 1);
+    
+    // Se os nós estiverem muito próximos ou sobrepostos, força o espaçamento mínimo
+    if (step < HORIZONTAL_SPACING) {
+      step = HORIZONTAL_SPACING;
+    }
+    
+    const newPositions = new Map();
+    sortedNodes.forEach((n, i) => {
+      newPositions.set(n.id, { x: minX + (i * step), y: avgY });
+    });
+    
+    setNodes(nds => nds.map(n => {
+      const pos = newPositions.get(n.id);
+      return pos ? { ...n, position: pos } : n;
+    }));
+  }, [nodes, setNodes]);
+
+  const alinharVertical = useCallback(() => {
+    const selectedNodes = nodes.filter(n => n.selected);
+    if (selectedNodes.length < 2) return;
+    
+    // Alinhamento no eixo X (média)
+    const avgX = selectedNodes.reduce((acc, n) => acc + n.position.x, 0) / selectedNodes.length;
+    
+    // Distribuição no eixo Y (equidistante com espaçamento mínimo)
+    const sortedNodes = [...selectedNodes].sort((a, b) => a.position.y - b.position.y);
+    const minY = sortedNodes[0].position.y;
+    const maxY = sortedNodes[sortedNodes.length - 1].position.y;
+    const count = sortedNodes.length;
+    
+    const VERTICAL_SPACING = 100; // Altura aproximada do nó + margem
+    let step = (maxY - minY) / (count - 1);
+    
+    // Se os nós estiverem muito próximos ou sobrepostos, força o espaçamento mínimo
+    if (step < VERTICAL_SPACING) {
+      step = VERTICAL_SPACING;
+    }
+    
+    const newPositions = new Map();
+    sortedNodes.forEach((n, i) => {
+      newPositions.set(n.id, { x: avgX, y: minY + (i * step) });
+    });
+    
+    setNodes(nds => nds.map(n => {
+      const pos = newPositions.get(n.id);
+      return pos ? { ...n, position: pos } : n;
+    }));
+  }, [nodes, setNodes]);
+
+  const onNodeDragStart = useCallback(() => { isDragging.current = true; }, []);
+  const onNodeDragStop = useCallback((_: any, node: any) => { 
+    setTimeout(() => { isDragging.current = false; }, 100); 
     centralizarNoPalcoUtil([node]);
-    setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === node.id })));
-  }, [centralizarNoPalcoUtil, setNodes]);
+  }, [centralizarNoPalcoUtil]);
+
+  const onNodeClick = useCallback((event: any, node: any) => {
+    if (isDragging.current) return;
+    
+    // Se não estiver usando Shift, centraliza o nó e desmarca arestas manualmente para limpar o painel
+    if (!event.shiftKey) {
+      centralizarNoPalcoUtil([node]);
+      setEdges((eds) => eds.map((e) => ({ ...e, selected: false })));
+    }
+    // A seleção em si é tratada pelo React Flow via onNodesChange + multiSelectionKeyCode
+  }, [centralizarNoPalcoUtil, setEdges]);
+
+  const onEdgeClick = useCallback((event: any, _edge: any) => {
+    // Se não estiver usando Shift, desmarca nós manualmente
+    if (!event.shiftKey) {
+      setNodes((nds) => nds.map((n) => ({ ...n, selected: false })));
+    }
+    // A seleção em si é tratada pelo React Flow via onEdgesChange + multiSelectionKeyCode
+  }, [setNodes]);
 
   const sincronizarTudoComNuvem = async () => {
     if (!supabaseConfigured) {
-      alert("Supabase não configurado. Verifique os Secrets.");
+      mostrarAviso("Atenção", "Supabase não configurado. Verifique os Secrets.");
       return;
     }
 
-    const confirmar = window.confirm("Deseja sincronizar TODOS os sistemas locais com a nuvem? Isso irá sobrescrever dados com o mesmo ID no Supabase.");
-    if (!confirmar) return;
+    mostrarConfirmacao(
+      "Sincronização Global",
+      "Deseja sincronizar TODOS os sistemas locais com a nuvem? Isso irá sobrescrever dados com o mesmo ID no Supabase.",
+      async () => {
+        setSyncStatus('syncing');
+        addDebugLog('Iniciando sincronização manual de todos os projetos...');
+        
+        try {
+          const { error, data, status } = await supabase
+            .from('projetos')
+            .upsert(projetos.map(p => ({
+              ...p,
+              updated_at: new Date().toISOString()
+            })), { onConflict: 'id' })
+            .select();
 
-    setSyncStatus('syncing');
-    addDebugLog('Iniciando sincronização manual de todos os projetos...');
+          if (error) {
+            addDebugLog(`Erro na sincronização manual: ${error.message}`);
+            throw error;
+          }
+          
+          addDebugLog(`Sincronização manual concluída. Status: ${status}. Itens: ${data?.length || 0}`);
+          setSyncStatus('synced');
+          setSupabaseError(null);
+          mostrarAviso("Sucesso", "Sincronização completa! Todos os sistemas foram enviados para a nuvem.");
+        } catch (err: any) {
+          addDebugLog(`Erro na sincronização manual: ${err.message}`);
+          setSyncStatus('error');
+          setSupabaseError(`Erro na sincronização: ${err.message}`);
+          mostrarAviso("Erro", "Erro ao sincronizar: " + err.message);
+        }
+      }
+    );
+  };
+
+  const criarNovoProjeto = async () => {
+    if (!nomeNovoProjeto.trim()) {
+      setErroModal("O nome do projeto não pode estar vazio.");
+      return;
+    }
+    
+    const nomeNormalizado = nomeNovoProjeto.trim().toUpperCase();
+    
+    // Verifica se o nome já existe
+    const existe = projetos.some(p => p.nome.toUpperCase() === nomeNormalizado);
+    if (existe) {
+      setErroModal("Já existe um sistema com este nome.");
+      return;
+    }
+
+    const novo = { 
+      id: generateUUID(),
+      nome: nomeNormalizado, 
+      nodes: [], 
+      edges: [],
+      updated_at: new Date().toISOString()
+    };
     
     try {
-      const { error, data, status } = await supabase
-        .from('projetos')
-        .upsert(projetos.map(p => ({
-          ...p,
-          updated_at: new Date().toISOString()
-        })), { onConflict: 'id' })
-        .select();
-
-      if (error) {
-        addDebugLog(`Erro na sincronização manual: ${error.message}`);
-        throw error;
+      if (supabaseConfigured) {
+        const { data, error } = await supabase.from('projetos').insert([novo]).select();
+        if (error) throw error;
+        if (data && data.length > 0) {
+          setProjetos(prev => [...prev, data[0]]);
+          setProjetoAtivoId(data[0].id);
+          addDebugLog(`Novo projeto criado: ${data[0].nome}`);
+        }
+      } else {
+        setProjetos(prev => [...prev, novo]);
+        setProjetoAtivoId(novo.id);
+        addDebugLog(`Novo projeto local criado`);
       }
-      
-      addDebugLog(`Sincronização manual concluída. Status: ${status}. Itens: ${data?.length || 0}`);
-      setSyncStatus('synced');
-      setSupabaseError(null);
-      alert("Sincronização completa! Todos os sistemas foram enviados para a nuvem.");
+      setShowModalNovo(false);
+      setNomeNovoProjeto('');
+      setErroModal('');
     } catch (err: any) {
-      addDebugLog(`Erro na sincronização manual: ${err.message}`);
-      setSyncStatus('error');
-      setSupabaseError(`Erro na sincronização: ${err.message}`);
-      alert("Erro ao sincronizar: " + err.message);
+      addDebugLog(`ERRO ao criar projeto: ${err.message}`);
+      setErroModal(`Erro ao criar projeto: ${err.message}`);
     }
   };
 
@@ -707,34 +905,11 @@ const FlowContent = () => {
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button 
             disabled={!modoEdicao}
-            onClick={async () => {
+            onClick={() => {
               if (!modoEdicao) return;
-              const novo = { 
-                id: generateUUID(),
-                nome: 'NOVO PROJETO', 
-                nodes: [], 
-                edges: [],
-                updated_at: new Date().toISOString()
-              };
-              
-              try {
-                if (supabaseConfigured) {
-                  const { data, error } = await supabase.from('projetos').insert([novo]).select();
-                  if (error) throw error;
-                  if (data && data.length > 0) {
-                    setProjetos(prev => [...prev, data[0]]);
-                    setProjetoAtivoId(data[0].id);
-                    addDebugLog(`Novo projeto criado: ${data[0].nome}`);
-                  }
-                } else {
-                  setProjetos(prev => [...prev, novo]);
-                  setProjetoAtivoId(novo.id);
-                  addDebugLog(`Novo projeto local criado`);
-                }
-              } catch (err: any) {
-                addDebugLog(`ERRO ao criar projeto: ${err.message}`);
-                alert(`Erro ao criar novo projeto: ${err.message}`);
-              }
+              setErroModal('');
+              setNomeNovoProjeto('');
+              setShowModalNovo(true);
             }} 
             style={{ 
               ...btnNovoProjeto, 
@@ -804,12 +979,13 @@ const FlowContent = () => {
                 <button onClick={(e) => { e.stopPropagation(); exportarSistema(p); }} style={btnMini} title="Exportar individual"><Download size={12} /></button>
                 <button onClick={(e) => { 
                   e.stopPropagation(); 
+                  if (!modoEdicao) return;
                   const pCopia = { ...p, id: generateUUID(), nome: `${p.nome} (CÓPIA)`, updated_at: new Date().toISOString() };
                   
                   if (supabaseConfigured) {
                     supabase.from('projetos').insert([pCopia]).select().then(({data, error}) => {
                       if (error) {
-                        alert(`Erro ao copiar: ${error.message}`);
+                        mostrarAviso("Erro ao Copiar", `Erro ao copiar: ${error.message}`);
                         return;
                       }
                       if (data) {
@@ -821,36 +997,48 @@ const FlowContent = () => {
                     setProjetos([...projetos, pCopia]);
                     setProjetoAtivoId(pCopia.id);
                   }
-                }} style={btnMini} title="Copiar"><Copy size={12} /></button>
+                }} 
+                style={{ 
+                  ...btnMini, 
+                  opacity: modoEdicao ? 1 : 0.4, 
+                  cursor: modoEdicao ? 'pointer' : 'not-allowed' 
+                }} 
+                title={modoEdicao ? "Copiar" : "Modo Edição necessário para copiar"}
+              >
+                <Copy size={12} />
+              </button>
                 <button onClick={(e) => { 
                   e.stopPropagation(); 
                   if (projetos.length > 1) { 
-                    const confirmar = window.confirm(`Deseja realmente excluir o sistema "${p.nome}"?`);
-                    if (confirmar) {
-                      if (supabaseConfigured) {
-                        supabase.from('projetos').delete().eq('id', p.id).then(({ error }) => {
-                          if (error) {
-                            alert(`Erro ao excluir na nuvem: ${error.message}`);
-                            return;
-                          }
+                    mostrarConfirmacao(
+                      "Excluir Sistema",
+                      `Deseja realmente excluir o sistema "${p.nome}"? Esta ação não pode ser desfeita.`,
+                      () => {
+                        if (supabaseConfigured) {
+                          supabase.from('projetos').delete().eq('id', p.id).then(({ error }) => {
+                            if (error) {
+                              mostrarAviso("Erro ao Excluir", `Erro ao excluir na nuvem: ${error.message}`);
+                              return;
+                            }
+                            setProjetos(prev => {
+                              const novos = prev.filter(x => x.id !== p.id); 
+                              if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
+                              return novos;
+                            });
+                            addDebugLog(`Projeto excluído: ${p.nome}`);
+                          });
+                        } else {
                           setProjetos(prev => {
                             const novos = prev.filter(x => x.id !== p.id); 
                             if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
                             return novos;
                           });
-                          addDebugLog(`Projeto excluído: ${p.nome}`);
-                        });
-                      } else {
-                        setProjetos(prev => {
-                          const novos = prev.filter(x => x.id !== p.id); 
-                          if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
-                          return novos;
-                        });
-                        addDebugLog(`Projeto local excluído: ${p.nome}`);
+                          addDebugLog(`Projeto local excluído: ${p.nome}`);
+                        }
                       }
-                    }
+                    );
                   } else {
-                    alert("Atenção: Não é possível excluir o último sistema. É necessário ter ao menos um sistema ativo.");
+                    mostrarAviso("Atenção", "Não é possível excluir o último sistema. É necessário ter ao menos um sistema ativo.");
                   }
                 }} style={{ ...btnMini, color: '#ef4444' }} title="Apagar"><Trash2 size={12} /></button>
               </div>
@@ -892,42 +1080,30 @@ const FlowContent = () => {
 
       <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
         <div style={headerStyle}>
-          <div style={{ flex: 1 }}>
-            {modoEdicao ? (
-              <input value={projetoAtivo?.nome || ''} 
-                onChange={(e) => setProjetos(projetos.map(p => p.id === projetoAtivoId ? {...p, nome: e.target.value.toUpperCase()} : p))} 
-                style={inputHeader} />
-            ) : (
-              <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b' }}>{projetoAtivo?.nome}</h1>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            {(!supabaseConfigured || supabaseError) && (
-              <div style={{ background: '#fff7ed', border: '1px solid #ffedd5', padding: '8px 16px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <ShieldAlert size={16} color="#f97316" />
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '10px', fontWeight: 800, color: '#9a3412', lineHeight: 1 }}>
-                    {!supabaseConfigured ? 'MODO OFFLINE' : 'ERRO NA NUVEM'}
-                  </span>
-                  <span style={{ fontSize: '9px', fontWeight: 500, color: '#c2410c' }}>
-                    {supabaseError || 'Configure o Supabase nos Secrets para salvar na nuvem.'}
-                  </span>
-                </div>
-              </div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '10px' }}>
-              {syncStatus === 'syncing' && <RefreshCw size={14} className="animate-spin" color="#3b82f6" />}
-              {syncStatus === 'synced' && <Cloud size={14} color="#10b981" />}
-              {syncStatus === 'error' && <CloudOff size={14} color="#ef4444" />}
-              <span style={{ fontSize: '10px', fontWeight: 700, color: syncStatus === 'error' ? '#ef4444' : '#64748b' }}>
-                {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? 'Nuvem OK' : 'Erro de Conexão'}
-              </span>
-            </div>
-            <div className="search-input-container" style={{ marginBottom: 0, width: '300px' }}>
+          {/* LADO ESQUERDO: BOTÃO DE MODO E PESQUISA GERAL */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1 }}>
+            <button onClick={() => { 
+              if (!modoEdicao) {
+                const isMobile = window.innerWidth <= 768;
+                if (isMobile) {
+                  mostrarAviso("Dispositivo Móvel", "O Modo Edição não está disponível em dispositivos móveis para garantir a precisão do fluxograma.");
+                  return;
+                }
+              }
+              if (modoEdicao) {
+                salvarNoSupabase();
+              }
+              setModoEdicao(!modoEdicao); 
+              fecharPainel(); 
+            }} style={{ ...btnPrimario, background: modoEdicao ? '#ef4444' : '#2563eb', whiteSpace: 'nowrap' }}>
+              {modoEdicao ? 'Salvar Sistema' : 'Modo Edição'}
+            </button>
+
+            <div className="search-input-container" style={{ marginBottom: 0, width: '250px' }}>
               <Activity size={14} className="search-icon" />
               <input 
                 type="text" 
-                placeholder="Pesquisa Geral (Sistemas e Equipamentos)..." 
+                placeholder="Pesquisa Geral..." 
                 value={termoPesquisaProjetos}
                 onChange={(e) => setTermoPesquisaProjetos(e.target.value)}
                 style={{ background: '#f8fafc', paddingRight: '30px' }}
@@ -938,46 +1114,71 @@ const FlowContent = () => {
                 </button>
               )}
             </div>
+          </div>
+
+          {/* CENTRO: TÍTULO DO PROJETO */}
+          <div style={{ flex: 1, textAlign: 'center', display: 'flex', justifyContent: 'center' }}>
+            {modoEdicao ? (
+              <input value={projetoAtivo?.nome || ''} 
+                onChange={(e) => setProjetos(projetos.map(p => p.id === projetoAtivoId ? {...p, nome: e.target.value.toUpperCase()} : p))} 
+                style={{ ...inputHeader, textAlign: 'center', width: 'auto', minWidth: '300px' }} />
+            ) : (
+              <h1 style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {projetoAtivo?.nome}
+              </h1>
+            )}
+          </div>
+
+          {/* LADO DIREITO: BOTÕES DE VISÃO/PDF E STATUS */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
             <button onClick={() => fitView({ duration: 800, padding: 0.4 })} style={btnSecundario}>Visão Geral</button>
-            <button onClick={exportarPDF} style={{...btnSecundario, borderColor: '#3b82f6', color: '#3b82f6'}}>
+            
+            <button onClick={exportarPDF} style={{...btnSecundario, borderColor: '#3b82f6', color: '#3b82f6', whiteSpace: 'nowrap'}}>
               <FileDown size={14} style={{marginRight: '5px'}}/> Exportar PDF
             </button>
-            <button onClick={() => { 
-              if (!modoEdicao) {
-                const isMobile = window.innerWidth <= 768;
-                if (isMobile) {
-                  alert("O Modo Edição não está disponível em dispositivos móveis para garantir a precisão do fluxograma.");
-                  return;
-                }
-              }
-              if (modoEdicao) {
-                salvarNoSupabase();
-              }
-              setModoEdicao(!modoEdicao); 
-              fecharPainel(); 
-            }} style={{ ...btnPrimario, background: modoEdicao ? '#ef4444' : '#2563eb' }}>
-              {modoEdicao ? 'Salvar Sistema' : 'Modo Edição'}
-            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {syncStatus === 'syncing' && <RefreshCw size={14} className="animate-spin" color="#3b82f6" />}
+              {syncStatus === 'synced' && <Cloud size={14} color="#10b981" />}
+              {syncStatus === 'error' && <CloudOff size={14} color="#ef4444" />}
+              <span style={{ fontSize: '10px', fontWeight: 700, color: syncStatus === 'error' ? '#ef4444' : '#64748b' }}>
+                {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? 'Nuvem OK' : 'Erro de Conexão'}
+              </span>
+            </div>
+
+            {(!supabaseConfigured || supabaseError) && (
+              <div style={{ background: '#fff7ed', border: '1px solid #ffedd5', padding: '6px 12px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                <ShieldAlert size={14} color="#f97316" />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#9a3412', lineHeight: 1 }}>
+                    {!supabaseConfigured ? 'OFFLINE' : 'ERRO'}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         <div style={{ flexGrow: 1, position: 'relative' }}>
-          <ReactFlow
-            nodes={nodes} edges={edges} nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
-            onNodeClick={onNodeClick} onSelectionChange={onSelectionChange}
-            onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop}
-            onPaneClick={fecharPainel}
+            <ReactFlow
+              nodes={nodes} edges={edges} nodeTypes={nodeTypes}
+              onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
+              onNodeClick={onNodeClick} onEdgeClick={onEdgeClick} onSelectionChange={onSelectionChange} onSelectionEnd={onSelectionEnd}
+              onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop}
+              onPaneClick={fecharPainel}
             nodesDraggable={modoEdicao} nodesConnectable={modoEdicao}
+            snapToGrid={modoEdicao} snapGrid={[20, 20]}
             deleteKeyCode={modoEdicao ? ["Backspace", "Delete"] : null}
             selectionMode={SelectionMode.Partial} selectNodesOnDrag={modoEdicao}
             connectionMode={ConnectionMode.Loose}
+            multiSelectionKeyCode="Shift"
+            selectionKeyCode="Shift"
           >
             <Background color="#cbd5e1" variant={BackgroundVariant.Dots} gap={20} />
             <Controls />
 
             {/* PESQUISA NO FLUXOGRAMA (LOCAL) */}
-            <Panel position="top-right" style={{ marginTop: '20px', marginRight: modoEdicao ? '220px' : '20px' }}>
+            <Panel position="top-left" style={{ marginTop: '20px', marginLeft: '20px' }}>
               <div className="search-input-container" style={{ marginBottom: 0, width: '220px' }}>
                 <Zap size={14} className="search-icon" />
                 <input 
@@ -995,7 +1196,7 @@ const FlowContent = () => {
               </div>
             </Panel>
 
-            {modoEdicao && totalSelecionado > 1 && (
+            {modoEdicao && totalSelecionado >= 1 && (
               <Panel position="bottom-center" style={{ marginBottom: '20px' }}>
                 <button onClick={excluirSelecaoTotal} style={btnExclusaoBulk}>
                   <Trash2 size={16} /> Excluir Seleção ({totalSelecionado})
@@ -1033,11 +1234,43 @@ const FlowContent = () => {
           {selecionado.type === 'bulk' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                 <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
-                    <Layers size={12} style={{verticalAlign:'middle', marginRight: '5px'}}/> 
-                    {selecionado.nodeCount} nós e {selecionado.edgeCount} linhas
-                 </p>
+                <p style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
+                  <Layers size={12} style={{verticalAlign:'middle', marginRight: '5px'}}/> 
+                  {selecionado.nodeCount} nós e {selecionado.edgeCount} linhas
+                </p>
               </div>
+
+              {selecionado.nodeCount > 1 && (
+                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '15px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <div>
+                    <label style={labelSmall}>Identificação em Massa</label>
+                    <input type="text" style={inputStyle} placeholder="Alterar todos os nomes para..." disabled={!modoEdicao} onChange={(e) => updateBulkNodes({ label: e.target.value })} />
+                  </div>
+                  
+                  <div>
+                    <label style={labelSmall}>Código do Ativo em Massa</label>
+                    <input type="text" style={inputStyle} placeholder="Alterar todos os códigos para..." disabled={!modoEdicao} onChange={(e) => updateBulkNodes({ nodeId: e.target.value })} />
+                  </div>
+
+                  <div>
+                    <label style={labelSmall}>Detalhes em Massa</label>
+                    <textarea style={{ ...inputStyle, height: '80px', resize: 'none', padding: '10px' }} placeholder="Alterar todos os detalhes para..." disabled={!modoEdicao} onChange={(e) => updateBulkNodes({ detalhes: e.target.value })} />
+                  </div>
+                  
+                  <div>
+                    <label style={labelSmall}>Ferramentas de Alinhamento</label>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <button onClick={alinharHorizontal} disabled={!modoEdicao} style={{ ...btnBackupOp, flex: 1, background: '#f8fafc' }}>
+                        <ArrowDown size={14} style={{transform: 'rotate(90deg)'}}/> Alinhar Horizontal
+                      </button>
+                      <button onClick={alinharVertical} disabled={!modoEdicao} style={{ ...btnBackupOp, flex: 1, background: '#f8fafc' }}>
+                        <ArrowDown size={14}/> Alinhar Vertical
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {selecionado.edgeCount > 0 && (
                 <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '15px' }}>
                   <label style={labelSmall}>Diâmetro p/ Tubulações (mm)</label>
@@ -1047,6 +1280,14 @@ const FlowContent = () => {
                     <button onClick={() => updateBulkEdges({ tipo: 'gravidade' })} disabled={!modoEdicao} style={{ ...btnFlowType, background: '#3b82f6', color: 'white' }}>Gravidade</button>
                     <button onClick={() => updateBulkEdges({ tipo: 'bombeada' })} disabled={!modoEdicao} style={{ ...btnFlowType, background: '#ef4444', color: 'white' }}>Bombeada</button>
                   </div>
+                </div>
+              )}
+
+              {modoEdicao && (
+                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '15px', marginTop: 'auto' }}>
+                  <button onClick={excluirSelecaoTotal} style={btnDeleteSide}>
+                    <Trash2 size={14} /> Excluir Seleção ({totalSelecionado})
+                  </button>
                 </div>
               )}
             </div>
@@ -1120,6 +1361,84 @@ const FlowContent = () => {
           )}
         </div>
       )}
+
+      {/* MODAL NOVO PROJETO */}
+      {showModalNovo && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
+        }}>
+          <div style={{
+            background: 'white', padding: '32px', borderRadius: '20px', width: '400px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            display: 'flex', flexDirection: 'column', gap: '20px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b' }}>Novo Sistema</h3>
+              <button onClick={() => setShowModalNovo(false)} style={btnClose}><X size={20} /></button>
+            </div>
+            
+            <div>
+              <label style={labelSmall}>Nome do Sistema</label>
+              <input 
+                autoFocus
+                style={{...inputStyle, background: 'white', border: erroModal ? '1px solid #ef4444' : '1px solid #e2e8f0'}} 
+                placeholder="Ex: SISTEMA DE ABASTECIMENTO X"
+                value={nomeNovoProjeto}
+                onChange={(e) => {
+                  setNomeNovoProjeto(e.target.value);
+                  if (erroModal) setErroModal('');
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && criarNovoProjeto()}
+              />
+              {erroModal && <p style={{ color: '#ef4444', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>{erroModal}</p>}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+              <button onClick={() => setShowModalNovo(false)} style={{...btnSecundario, flex: 1}}>Cancelar</button>
+              <button onClick={criarNovoProjeto} style={{...btnPrimario, flex: 1, background: '#2563eb'}}>Criar Sistema</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL GERAL (AVISO / CONFIRMAÇÃO) */}
+      {modalConfig.show && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000
+        }}>
+          <div style={{
+            background: 'white', padding: '32px', borderRadius: '20px', width: '450px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            display: 'flex', flexDirection: 'column', gap: '20px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {modalConfig.tipo === 'confirmacao' ? <ShieldAlert size={22} color="#f59e0b" /> : <Activity size={22} color="#3b82f6" />}
+                {modalConfig.titulo}
+              </h3>
+              <button onClick={fecharModalGeral} style={btnClose}><X size={20} /></button>
+            </div>
+            
+            <div style={{ fontSize: '14px', color: '#475569', lineHeight: 1.6, fontWeight: 500 }}>
+              {modalConfig.mensagem}
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+              {modalConfig.tipo === 'confirmacao' ? (
+                <>
+                  <button onClick={fecharModalGeral} style={{...btnSecundario, flex: 1}}>Cancelar</button>
+                  <button onClick={() => { modalConfig.onConfirm?.(); fecharModalGeral(); }} style={{...btnPrimario, flex: 1, background: '#ef4444'}}>Confirmar</button>
+                </>
+              ) : (
+                <button onClick={fecharModalGeral} style={{...btnPrimario, flex: 1, background: '#2563eb'}}>Entendido</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1140,7 +1459,7 @@ const btnPrimario = { padding: '10px 20px', borderRadius: '10px', border: 'none'
 const btnSecundario = { padding: '10px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', background: 'white', color: '#475569', fontWeight: 600, fontSize: '13px', cursor: 'pointer' };
 const panelComponents = { background: 'white', padding: '15px', borderRadius: '14px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: '180px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' };
 const btnComp = { padding: '10px', border: '1px solid #f1f5f9', borderRadius: '8px', background: '#fff', cursor: 'pointer', fontSize: '12px', fontWeight: 500, textAlign: 'left' as const, color: '#475569', display: 'flex', alignItems: 'center', gap: '8px' };
-const sidePanel = { position: 'fixed' as const, right: 16, top: 16, bottom: 16, width: '300px', background: 'white', padding: '28px', borderRadius: '18px', boxShadow: '0 0 30px rgba(0,0,0,0.08)', zIndex: 100, display: 'flex', flexDirection: 'column', border: '1px solid #e2e8f0' };
+const sidePanel = { position: 'fixed' as const, right: 16, top: 96, bottom: 16, width: '300px', background: 'white', padding: '28px', borderRadius: '18px', boxShadow: '0 0 30px rgba(0,0,0,0.08)', zIndex: 100, display: 'flex', flexDirection: 'column', border: '1px solid #e2e8f0' };
 const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '13px', background: '#f8fafc', outline: 'none' };
 const labelSmall = { fontSize: '10px', fontWeight: 800, color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase' as const, letterSpacing: '0.5px' };
 const btnClose = { background: '#f8fafc', border: 'none', borderRadius: '8px', padding: '6px', cursor: 'pointer', color: '#94a3b8' };
