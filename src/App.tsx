@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v1.7.8'; 
+const DEV_VERSION = 'v1.8.5'; 
 const STORAGE_KEY = 'fluxo_agua_v87_deso';
 
 const globalStyles = `
@@ -95,6 +95,12 @@ const globalStyles = `
     color: #ef4444;
     background: #fee2e2;
   }
+
+  /* Mobile optimizations */
+  @media (max-width: 768px) {
+    .mobile-only { display: flex !important; }
+    .desktop-only { display: none !important; }
+  }
 `;
 
 // Função auxiliar para gerar ID único (UUID)
@@ -127,8 +133,19 @@ const NodeCustomizado = memo(({ data, selected }: any) => {
         {icons[data.tipo] || <Activity size={14} />}
         <div style={{ fontWeight: 600, fontSize: '10px', textTransform: 'uppercase' }}>{data.label}</div>
       </div>
-      <div style={{ padding: '12px', background: 'white', textAlign: 'center', borderTop: '1px solid #f1f5f9', minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>{data.nodeId || ""}</div>
+      <div style={{ padding: '12px', background: 'white', textAlign: 'center', borderTop: '1px solid #f1f5f9', minHeight: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', textTransform: 'uppercase' }}>{data.nodeId || ""}</div>
+        
+        {data.tipo === 'Tratamento' && (data.concessionaria || data.uc || data.medidor) && (
+          <>
+            <div style={{ width: '100%', height: '1px', background: '#94a3b8', margin: '4px 0' }} />
+            <div style={{ fontSize: '10px', color: '#334155', textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: '2px', textTransform: 'uppercase', fontWeight: 700 }}>
+              {data.concessionaria && <div>Css. {data.concessionaria}</div>}
+              {data.uc && <div>UC {data.uc}</div>}
+              {data.medidor && <div>Med. {data.medidor}</div>}
+            </div>
+          </>
+        )}
       </div>
       <Handle type="source" position={Position.Top} id="t" /><Handle type="source" position={Position.Bottom} id="b" />
       <Handle type="source" position={Position.Left} id="l" /><Handle type="source" position={Position.Right} id="r" />
@@ -152,6 +169,8 @@ const FlowContent = () => {
   const [termoPesquisaElementos, setTermoPesquisaElementos] = useState('');
   const [ordenacao, setOrdenacao] = useState<'nome' | 'data'>('data');
   const [showModalNovo, setShowModalNovo] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(window.innerWidth <= 768);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [nomeNovoProjeto, setNomeNovoProjeto] = useState('');
   const [erroModal, setErroModal] = useState('');
   const [modalConfig, setModalConfig] = useState<{
@@ -162,6 +181,20 @@ const FlowContent = () => {
     onConfirm?: () => void;
     onCancel?: () => void;
   }>({ show: false, tipo: 'aviso', titulo: '', mensagem: '' });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobileView(mobile);
+      if (mobile) setModoEdicao(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (isMobileView) setModoEdicao(false);
+  }, [isMobileView]);
 
   const mostrarAviso = (titulo: string, mensagem: string | React.ReactNode) => {
     setModalConfig({ show: true, tipo: 'aviso', titulo, mensagem });
@@ -795,6 +828,12 @@ const FlowContent = () => {
     // A seleção em si é tratada pelo React Flow via onEdgesChange + multiSelectionKeyCode
   }, [setNodes]);
 
+  const onPaneClick = useCallback((event: React.MouseEvent) => {
+    // Se estiver segurando Shift, não limpa a seleção para permitir drag-box ou cliques múltiplos
+    if (event.shiftKey) return;
+    fecharPainel();
+  }, [fecharPainel]);
+
   const sincronizarTudoComNuvem = async () => {
     if (!supabaseConfigured) {
       mostrarAviso("Atenção", "Supabase não configurado. Verifique os Secrets.");
@@ -883,223 +922,257 @@ const FlowContent = () => {
   };
 
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', overflow: 'hidden' }}>
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', overflow: 'hidden', flexDirection: isMobileView ? 'column' : 'row' }}>
       <style>{globalStyles}</style>
 
-      {/* SIDEBAR ESQUERDA */}
-      <div style={{ width: '280px', background: '#ffffff', display: 'flex', flexDirection: 'column', borderRight: '1px solid #e2e8f0', zIndex: 10 }}>
-        {/* HEADER DA SIDEBAR */}
-        <div style={{ padding: '30px 24px', borderBottom: '1px solid #f1f5f9' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ background: '#2563eb', padding: '8px', borderRadius: '10px' }}><Droplet size={20} color="white" fill="white"/></div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <h2 style={{ fontSize: '11px', fontWeight: 800, color: '#1e3a8a', lineHeight: 1.2, textTransform: 'uppercase' }}>
-                Sistemas de Produção <span style={{ color: '#3b82f6' }}>DESO</span>
-              </h2>
-              <div style={versionBadgeStyle}>BUILD {DEV_VERSION}</div>
-            </div>
-          </div>
-        </div>
-        
-        {/* BOTÕES DE TOPO */}
-        <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <button 
-            disabled={!modoEdicao}
-            onClick={() => {
-              if (!modoEdicao) return;
-              setErroModal('');
-              setNomeNovoProjeto('');
-              setShowModalNovo(true);
-            }} 
-            style={{ 
-              ...btnNovoProjeto, 
-              opacity: modoEdicao ? 1 : 0.5, 
-              cursor: modoEdicao ? 'pointer' : 'not-allowed',
-              filter: modoEdicao ? 'none' : 'grayscale(0.5)'
-            }}
-          >
-            <Plus size={14} /> + Novo Projeto
-          </button>
-          
-          <button onClick={() => fileInputRef.current?.click()} style={btnImportar}>
-            <Upload size={14} /> Importar Arquivo JSON
-          </button>
-          <input type="file" ref={fileInputRef} onChange={lidarComImportacaoIndividual} accept=".json" style={{ display: 'none' }} />
-        </div>
-
-        {/* LISTA DE SISTEMAS (SCROLLABLE) */}
-        <div style={{ flexGrow: 1, overflowY: 'auto', padding: '10px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <p style={labelSmall}>Sistemas Ativos</p>
-            <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{projetosFiltrados.length}</span>
-          </div>
-
-          {/* OPÇÕES DE ORDENAÇÃO */}
-          <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
-            <button 
-              onClick={() => setOrdenacao('data')}
-              style={{
-                ...btnMiniSort,
-                background: ordenacao === 'data' ? '#eff6ff' : 'transparent',
-                color: ordenacao === 'data' ? '#2563eb' : '#94a3b8',
-                borderColor: ordenacao === 'data' ? '#dbeafe' : 'transparent'
-              }}
-            >
-              <Clock size={10} style={{marginRight: '4px'}}/> Recentes
-            </button>
-            <button 
-              onClick={() => setOrdenacao('nome')}
-              style={{
-                ...btnMiniSort,
-                background: ordenacao === 'nome' ? '#eff6ff' : 'transparent',
-                color: ordenacao === 'nome' ? '#2563eb' : '#94a3b8',
-                borderColor: ordenacao === 'nome' ? '#dbeafe' : 'transparent'
-              }}
-            >
-              <Activity size={10} style={{marginRight: '4px'}}/> A-Z
-            </button>
-          </div>
-
-          {projetosFiltrados.map(p => (
-            <div key={p.id} onClick={() => {
-              if (projetoAtivoId !== p.id) {
-                // Salva o estado atual antes de trocar
-                const currentNodes = nodesRef.current;
-                const currentEdges = edgesRef.current;
-                setProjetos(prev => prev.map(proj => proj.id === projetoAtivoId ? { ...proj, nodes: currentNodes, edges: currentEdges } : proj));
-                setProjetoAtivoId(p.id);
-              }
-            }} 
-              style={{ ...itemProjeto, background: projetoAtivoId === p.id ? '#eff6ff' : 'transparent', borderColor: projetoAtivoId === p.id ? '#dbeafe' : 'transparent' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
-                <FileText size={15} color={projetoAtivoId === p.id ? '#3b82f6' : '#94a3b8'} />
-                <span style={{ fontSize: '11px', fontWeight: 600, color: projetoAtivoId === p.id ? '#1e40af' : '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.nome}</span>
-              </div>
-              <div style={{ display: 'flex', gap: '2px' }}>
-                <button onClick={(e) => { e.stopPropagation(); exportarSistema(p); }} style={btnMini} title="Exportar individual"><Download size={12} /></button>
-                <button onClick={(e) => { 
-                  e.stopPropagation(); 
-                  if (!modoEdicao) return;
-                  const pCopia = { ...p, id: generateUUID(), nome: `${p.nome} (CÓPIA)`, updated_at: new Date().toISOString() };
-                  
-                  if (supabaseConfigured) {
-                    supabase.from('projetos').insert([pCopia]).select().then(({data, error}) => {
-                      if (error) {
-                        mostrarAviso("Erro ao Copiar", `Erro ao copiar: ${error.message}`);
-                        return;
-                      }
-                      if (data) {
-                        setProjetos([...projetos, data[0]]);
-                        setProjetoAtivoId(data[0].id);
-                      }
-                    });
-                  } else {
-                    setProjetos([...projetos, pCopia]);
-                    setProjetoAtivoId(pCopia.id);
-                  }
-                }} 
-                style={{ 
-                  ...btnMini, 
-                  opacity: modoEdicao ? 1 : 0.4, 
-                  cursor: modoEdicao ? 'pointer' : 'not-allowed' 
-                }} 
-                title={modoEdicao ? "Copiar" : "Modo Edição necessário para copiar"}
-              >
-                <Copy size={12} />
-              </button>
-                <button onClick={(e) => { 
-                  e.stopPropagation(); 
-                  if (projetos.length > 1) { 
-                    mostrarConfirmacao(
-                      "Excluir Sistema",
-                      `Deseja realmente excluir o sistema "${p.nome}"? Esta ação não pode ser desfeita.`,
-                      () => {
-                        if (supabaseConfigured) {
-                          supabase.from('projetos').delete().eq('id', p.id).then(({ error }) => {
-                            if (error) {
-                              mostrarAviso("Erro ao Excluir", `Erro ao excluir na nuvem: ${error.message}`);
-                              return;
-                            }
-                            setProjetos(prev => {
-                              const novos = prev.filter(x => x.id !== p.id); 
-                              if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
-                              return novos;
-                            });
-                            addDebugLog(`Projeto excluído: ${p.nome}`);
-                          });
-                        } else {
-                          setProjetos(prev => {
-                            const novos = prev.filter(x => x.id !== p.id); 
-                            if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
-                            return novos;
-                          });
-                          addDebugLog(`Projeto local excluído: ${p.nome}`);
-                        }
-                      }
-                    );
-                  } else {
-                    mostrarAviso("Atenção", "Não é possível excluir o último sistema. É necessário ter ao menos um sistema ativo.");
-                  }
-                }} style={{ ...btnMini, color: '#ef4444' }} title="Apagar"><Trash2 size={12} /></button>
+      {/* SIDEBAR ESQUERDA - Oculta no Mobile ou exibida como Overlay */}
+      {(!isMobileView || showMobileMenu) && (
+        <div style={{ 
+          width: isMobileView ? '100%' : '280px', 
+          height: isMobileView ? '100%' : 'auto',
+          position: isMobileView ? 'fixed' : 'relative',
+          top: 0, left: 0,
+          background: '#ffffff', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          borderRight: isMobileView ? 'none' : '1px solid #e2e8f0', 
+          zIndex: 2000 
+        }}>
+          {/* HEADER DA SIDEBAR */}
+          <div style={{ padding: '30px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ background: '#2563eb', padding: '8px', borderRadius: '10px' }}><Droplet size={20} color="white" fill="white"/></div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <h2 style={{ fontSize: '11px', fontWeight: 800, color: '#1e3a8a', lineHeight: 1.2, textTransform: 'uppercase' }}>
+                  Sistemas de Produção <span style={{ color: '#3b82f6' }}>DESO</span>
+                </h2>
+                <div style={versionBadgeStyle}>BUILD {DEV_VERSION} {isMobileView ? '(MOBILE)' : '(DESKTOP)'}</div>
+                {isMobileView && (
+                  <div style={{ fontSize: '9px', fontWeight: 800, color: '#ef4444', marginTop: '4px', textTransform: 'uppercase' }}>
+                    <Ban size={10} style={{ verticalAlign: 'middle', marginRight: '4px' }} /> Modo Somente Leitura
+                  </div>
+                )}
               </div>
             </div>
-          ))}
-        </div>
-
-        {/* BOTÕES DE BACKUP GLOBAL (PARTE INFERIOR) */}
-        <div style={{ padding: '16px', borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
-          <p style={{...labelSmall, marginBottom: '10px'}}>Manutenção de Banco</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <button onClick={() => exportarBackupGlobal()} style={btnBackupOp} title="Backup Geral">
-                <Database size={13} /> Backup Total
-              </button>
-              <button onClick={() => globalBackupRef.current?.click()} style={{...btnBackupOp, borderColor: '#fecdd3'}} title="Restaurar Tudo">
-                <ShieldAlert size={13} color="#ef4444" /> Restaurar
-              </button>
-            </div>
-            {supabaseConfigured && (
-              <button onClick={sincronizarTudoComNuvem} style={{...btnBackupOp, background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534'}} title="Sincronizar tudo com a nuvem">
-                <RefreshCw size={13} color="#16a34a" /> Sincronizar com Nuvem
-              </button>
+            {isMobileView && (
+              <button onClick={() => setShowMobileMenu(false)} style={btnClose}><X size={24} /></button>
             )}
           </div>
-          <input type="file" ref={globalBackupRef} onChange={restaurarBackupGlobal} accept=".json" style={{ display: 'none' }} />
-        </div>
+          
+          {/* BOTÕES DE TOPO - Desabilitados no Mobile */}
+          {!isMobileView && (
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button 
+                disabled={!modoEdicao}
+                onClick={() => {
+                  if (!modoEdicao) return;
+                  setErroModal('');
+                  setNomeNovoProjeto('');
+                  setShowModalNovo(true);
+                }} 
+                style={{ 
+                  ...btnNovoProjeto, 
+                  opacity: modoEdicao ? 1 : 0.5, 
+                  cursor: modoEdicao ? 'pointer' : 'not-allowed',
+                  filter: modoEdicao ? 'none' : 'grayscale(0.5)'
+                }}
+              >
+                <Plus size={14} /> + Novo Projeto
+              </button>
+              
+              <button onClick={() => fileInputRef.current?.click()} style={btnImportar}>
+                <Upload size={14} /> Importar Arquivo JSON
+              </button>
+              <input type="file" ref={fileInputRef} onChange={lidarComImportacaoIndividual} accept=".json" style={{ display: 'none' }} />
+            </div>
+          )}
 
-        {/* CONSOLE DE DEPURAÇÃO (DEBUG) */}
-        <div style={{ padding: '12px', borderTop: '1px solid #f1f5f9', background: '#1e293b', color: '#94a3b8', fontSize: '9px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
-          <p style={{ color: '#3b82f6', fontWeight: 800, marginBottom: '5px', fontSize: '10px' }}>LOG DE SINCRONIZAÇÃO</p>
-          {debugLogs.length === 0 ? (
-            <p>Nenhuma atividade registrada.</p>
-          ) : (
-            debugLogs.map((log, i) => <p key={i} style={{ marginBottom: '2px' }}>{log}</p>)
+          {/* LISTA DE SISTEMAS (SCROLLABLE) */}
+          <div style={{ flexGrow: 1, overflowY: 'auto', padding: '10px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <p style={labelSmall}>Sistemas Ativos</p>
+              <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{projetosFiltrados.length}</span>
+            </div>
+
+            {/* OPÇÕES DE ORDENAÇÃO */}
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
+              <button 
+                onClick={() => setOrdenacao('data')}
+                style={{
+                  ...btnMiniSort,
+                  background: ordenacao === 'data' ? '#eff6ff' : 'transparent',
+                  color: ordenacao === 'data' ? '#2563eb' : '#94a3b8',
+                  borderColor: ordenacao === 'data' ? '#dbeafe' : 'transparent'
+                }}
+              >
+                <Clock size={10} style={{marginRight: '4px'}}/> Recentes
+              </button>
+              <button 
+                onClick={() => setOrdenacao('nome')}
+                style={{
+                  ...btnMiniSort,
+                  background: ordenacao === 'nome' ? '#eff6ff' : 'transparent',
+                  color: ordenacao === 'nome' ? '#2563eb' : '#94a3b8',
+                  borderColor: ordenacao === 'nome' ? '#dbeafe' : 'transparent'
+                }}
+              >
+                <Activity size={10} style={{marginRight: '4px'}}/> A-Z
+              </button>
+            </div>
+
+            {projetosFiltrados.map(p => (
+              <div key={p.id} onClick={() => {
+                if (projetoAtivoId !== p.id) {
+                  const currentNodes = nodesRef.current;
+                  const currentEdges = edgesRef.current;
+                  setProjetos(prev => prev.map(proj => proj.id === projetoAtivoId ? { ...proj, nodes: currentNodes, edges: currentEdges } : proj));
+                  setProjetoAtivoId(p.id);
+                  if (isMobileView) setShowMobileMenu(false);
+                }
+              }} 
+                style={{ ...itemProjeto, background: projetoAtivoId === p.id ? '#eff6ff' : 'transparent', borderColor: projetoAtivoId === p.id ? '#dbeafe' : 'transparent' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
+                  <FileText size={15} color={projetoAtivoId === p.id ? '#3b82f6' : '#94a3b8'} />
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: projetoAtivoId === p.id ? '#1e40af' : '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.nome}</span>
+                </div>
+                {!isMobileView && (
+                  <div style={{ display: 'flex', gap: '2px' }}>
+                    <button onClick={(e) => { e.stopPropagation(); exportarSistema(p); }} style={btnMini} title="Exportar individual"><Download size={12} /></button>
+                    <button onClick={(e) => { 
+                      e.stopPropagation(); 
+                      if (!modoEdicao) return;
+                      const pCopia = { ...p, id: generateUUID(), nome: `${p.nome} (CÓPIA)`, updated_at: new Date().toISOString() };
+                      
+                      if (supabaseConfigured) {
+                        supabase.from('projetos').insert([pCopia]).select().then(({data, error}) => {
+                          if (error) {
+                            mostrarAviso("Erro ao Copiar", `Erro ao copiar: ${error.message}`);
+                            return;
+                          }
+                          if (data) {
+                            setProjetos([...projetos, data[0]]);
+                            setProjetoAtivoId(data[0].id);
+                          }
+                        });
+                      } else {
+                        setProjetos([...projetos, pCopia]);
+                        setProjetoAtivoId(pCopia.id);
+                      }
+                    }} 
+                    style={{ 
+                      ...btnMini, 
+                      opacity: modoEdicao ? 1 : 0.4, 
+                      cursor: modoEdicao ? 'pointer' : 'not-allowed' 
+                    }} 
+                    title={modoEdicao ? "Copiar" : "Modo Edição necessário para copiar"}
+                  >
+                    <Copy size={12} />
+                  </button>
+                    <button onClick={(e) => { 
+                      e.stopPropagation(); 
+                      if (projetos.length > 1) { 
+                        mostrarConfirmacao(
+                          "Excluir Sistema",
+                          `Deseja realmente excluir o sistema "${p.nome}"? Esta ação não pode ser desfeita.`,
+                          () => {
+                            if (supabaseConfigured) {
+                              supabase.from('projetos').delete().eq('id', p.id).then(({ error }) => {
+                                if (error) {
+                                  mostrarAviso("Erro ao Excluir", `Erro ao excluir na nuvem: ${error.message}`);
+                                  return;
+                                }
+                                setProjetos(prev => {
+                                  const novos = prev.filter(x => x.id !== p.id); 
+                                  if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
+                                  return novos;
+                                });
+                                addDebugLog(`Projeto excluído: ${p.nome}`);
+                              });
+                            } else {
+                              setProjetos(prev => {
+                                const novos = prev.filter(x => x.id !== p.id); 
+                                if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
+                                return novos;
+                              });
+                              addDebugLog(`Projeto local excluído: ${p.nome}`);
+                            }
+                          }
+                        );
+                      } else {
+                        mostrarAviso("Atenção", "Não é possível excluir o último sistema. É necessário ter ao menos um sistema ativo.");
+                      }
+                    }} style={{ ...btnMini, color: '#ef4444' }} title="Apagar"><Trash2 size={12} /></button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* BOTÕES DE BACKUP GLOBAL - Ocultos no Mobile */}
+          {!isMobileView && (
+            <div style={{ padding: '16px', borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
+              <p style={{...labelSmall, marginBottom: '10px'}}>Manutenção de Banco</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button onClick={() => exportarBackupGlobal()} style={btnBackupOp} title="Backup Geral">
+                    <Database size={13} /> Backup Total
+                  </button>
+                  <button onClick={() => globalBackupRef.current?.click()} style={{...btnBackupOp, borderColor: '#fecdd3'}} title="Restaurar Tudo">
+                    <ShieldAlert size={13} color="#ef4444" /> Restaurar
+                  </button>
+                </div>
+                {supabaseConfigured && (
+                  <button onClick={sincronizarTudoComNuvem} style={{...btnBackupOp, background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534'}} title="Sincronizar tudo com a nuvem">
+                    <RefreshCw size={13} color="#16a34a" /> Sincronizar com Nuvem
+                  </button>
+                )}
+              </div>
+              <input type="file" ref={globalBackupRef} onChange={restaurarBackupGlobal} accept=".json" style={{ display: 'none' }} />
+            </div>
+          )}
+
+          {/* CONSOLE DE DEPURAÇÃO - Oculto no Mobile */}
+          {!isMobileView && (
+            <div style={{ padding: '12px', borderTop: '1px solid #f1f5f9', background: '#1e293b', color: '#94a3b8', fontSize: '9px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
+              <p style={{ color: '#3b82f6', fontWeight: 800, marginBottom: '5px', fontSize: '10px' }}>LOG DE SINCRONIZAÇÃO</p>
+              {debugLogs.length === 0 ? (
+                <p>Nenhuma atividade registrada.</p>
+              ) : (
+                debugLogs.map((log, i) => <p key={i} style={{ marginBottom: '2px' }}>{log}</p>)
+              )}
+            </div>
           )}
         </div>
-      </div>
+      )}
 
       <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-        <div style={headerStyle}>
+        <div style={{ ...headerStyle, height: isMobileView ? 'auto' : '80px', padding: isMobileView ? '12px 16px' : '0 30px', flexDirection: isMobileView ? 'column' : 'row', gap: isMobileView ? '12px' : '0' }}>
           {/* LADO ESQUERDO: BOTÃO DE MODO E PESQUISA GERAL */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1 }}>
-            <button onClick={() => { 
-              if (!modoEdicao) {
-                const isMobile = window.innerWidth <= 768;
-                if (isMobile) {
-                  mostrarAviso("Dispositivo Móvel", "O Modo Edição não está disponível em dispositivos móveis para garantir a precisão do fluxograma.");
-                  return;
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, width: isMobileView ? '100%' : 'auto' }}>
+            {isMobileView ? (
+              <button onClick={() => setShowMobileMenu(true)} style={{ ...btnSecundario, padding: '8px' }}>
+                <Layers size={20} />
+              </button>
+            ) : (
+              <button onClick={() => { 
+                if (!modoEdicao) {
+                  const isMobile = window.innerWidth <= 768;
+                  if (isMobile) {
+                    mostrarAviso("Dispositivo Móvel", "O Modo Edição não está disponível em dispositivos móveis para garantir a precisão do fluxograma.");
+                    return;
+                  }
                 }
-              }
-              if (modoEdicao) {
-                salvarNoSupabase();
-              }
-              setModoEdicao(!modoEdicao); 
-              fecharPainel(); 
-            }} style={{ ...btnPrimario, background: modoEdicao ? '#ef4444' : '#2563eb', whiteSpace: 'nowrap' }}>
-              {modoEdicao ? 'Salvar Sistema' : 'Modo Edição'}
-            </button>
+                if (modoEdicao) {
+                  salvarNoSupabase();
+                }
+                setModoEdicao(!modoEdicao); 
+                fecharPainel(); 
+              }} style={{ ...btnPrimario, background: modoEdicao ? '#ef4444' : '#2563eb', whiteSpace: 'nowrap' }}>
+                {modoEdicao ? 'Salvar Sistema' : 'Modo Edição'}
+              </button>
+            )}
 
-            <div className="search-input-container" style={{ marginBottom: 0, width: '250px' }}>
+            <div className="search-input-container" style={{ marginBottom: 0, width: isMobileView ? '100%' : '250px' }}>
               <Activity size={14} className="search-icon" />
               <input 
                 type="text" 
@@ -1117,45 +1190,43 @@ const FlowContent = () => {
           </div>
 
           {/* CENTRO: TÍTULO DO PROJETO */}
-          <div style={{ flex: 1, textAlign: 'center', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ flex: 1, textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', width: isMobileView ? '100%' : 'auto' }}>
             {modoEdicao ? (
               <input value={projetoAtivo?.nome || ''} 
                 onChange={(e) => setProjetos(projetos.map(p => p.id === projetoAtivoId ? {...p, nome: e.target.value.toUpperCase()} : p))} 
-                style={{ ...inputHeader, textAlign: 'center', width: 'auto', minWidth: '300px' }} />
+                style={{ ...inputHeader, textAlign: 'center', width: 'auto', minWidth: isMobileView ? '100%' : '300px' }} />
             ) : (
-              <h1 style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                {projetoAtivo?.nome}
-              </h1>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <h1 style={{ fontSize: isMobileView ? '14px' : '18px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  {projetoAtivo?.nome}
+                </h1>
+                {isMobileView && (
+                  <div style={{ fontSize: '9px', fontWeight: 800, color: '#3b82f6', background: '#eff6ff', padding: '2px 8px', borderRadius: '100px', marginTop: '4px', textTransform: 'uppercase', border: '1px solid #dbeafe' }}>
+                    Modo Consulta Ativo
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
           {/* LADO DIREITO: BOTÕES DE VISÃO/PDF E STATUS */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
-            <button onClick={() => fitView({ duration: 800, padding: 0.4 })} style={btnSecundario}>Visão Geral</button>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, justifyContent: isMobileView ? 'center' : 'flex-end', width: isMobileView ? '100%' : 'auto' }}>
+            <button onClick={() => fitView({ duration: 800, padding: 0.4 })} style={{ ...btnSecundario, padding: isMobileView ? '8px 12px' : '10px 20px', fontSize: isMobileView ? '11px' : '13px' }}>Visão Geral</button>
             
-            <button onClick={exportarPDF} style={{...btnSecundario, borderColor: '#3b82f6', color: '#3b82f6', whiteSpace: 'nowrap'}}>
-              <FileDown size={14} style={{marginRight: '5px'}}/> Exportar PDF
-            </button>
+            {!isMobileView && (
+              <button onClick={exportarPDF} style={{...btnSecundario, borderColor: '#3b82f6', color: '#3b82f6', whiteSpace: 'nowrap'}}>
+                <FileDown size={14} style={{marginRight: '5px'}}/> Exportar PDF
+              </button>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               {syncStatus === 'syncing' && <RefreshCw size={14} className="animate-spin" color="#3b82f6" />}
               {syncStatus === 'synced' && <Cloud size={14} color="#10b981" />}
               {syncStatus === 'error' && <CloudOff size={14} color="#ef4444" />}
               <span style={{ fontSize: '10px', fontWeight: 700, color: syncStatus === 'error' ? '#ef4444' : '#64748b' }}>
-                {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? 'Nuvem OK' : 'Erro de Conexão'}
+                {isMobileView ? '' : (syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? 'Nuvem OK' : 'Erro de Conexão')}
               </span>
             </div>
-
-            {(!supabaseConfigured || supabaseError) && (
-              <div style={{ background: '#fff7ed', border: '1px solid #ffedd5', padding: '6px 12px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <ShieldAlert size={14} color="#f97316" />
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#9a3412', lineHeight: 1 }}>
-                    {!supabaseConfigured ? 'OFFLINE' : 'ERRO'}
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1165,7 +1236,7 @@ const FlowContent = () => {
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
               onNodeClick={onNodeClick} onEdgeClick={onEdgeClick} onSelectionChange={onSelectionChange} onSelectionEnd={onSelectionEnd}
               onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop}
-              onPaneClick={fecharPainel}
+              onPaneClick={onPaneClick}
             nodesDraggable={modoEdicao} nodesConnectable={modoEdicao}
             snapToGrid={modoEdicao} snapGrid={[20, 20]}
             deleteKeyCode={modoEdicao ? ["Backspace", "Delete"] : null}
@@ -1173,20 +1244,23 @@ const FlowContent = () => {
             connectionMode={ConnectionMode.Loose}
             multiSelectionKeyCode="Shift"
             selectionKeyCode="Shift"
+            panOnScroll={isMobileView}
+            zoomOnPinch={true}
+            preventScrolling={true}
           >
             <Background color="#cbd5e1" variant={BackgroundVariant.Dots} gap={20} />
-            <Controls />
+            <Controls showInteractive={modoEdicao} />
 
             {/* PESQUISA NO FLUXOGRAMA (LOCAL) */}
-            <Panel position="top-left" style={{ marginTop: '20px', marginLeft: '20px' }}>
-              <div className="search-input-container" style={{ marginBottom: 0, width: '220px' }}>
+            <Panel position="top-left" style={{ marginTop: isMobileView ? '10px' : '20px', marginLeft: isMobileView ? '10px' : '20px' }}>
+              <div className="search-input-container" style={{ marginBottom: 0, width: isMobileView ? '160px' : '220px' }}>
                 <Zap size={14} className="search-icon" />
                 <input 
                   type="text" 
-                  placeholder="Pesquisar neste fluxograma..." 
+                  placeholder="Pesquisar..." 
                   value={termoPesquisaElementos}
                   onChange={(e) => setTermoPesquisaElementos(e.target.value)}
-                  style={{ background: 'white', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', paddingRight: '30px' }}
+                  style={{ background: 'white', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', paddingRight: '30px', fontSize: isMobileView ? '10px' : '12px' }}
                 />
                 {termoPesquisaElementos && (
                   <button className="search-clear-btn" onClick={() => setTermoPesquisaElementos('')} title="Limpar pesquisa">
@@ -1209,7 +1283,7 @@ const FlowContent = () => {
                 <div style={panelComponents}>
                   <p style={labelSmall}>Componentes</p>
                   <button onClick={() => adicionarNo('Captação', 'Captação', '#3b82f6')} style={btnComp}><Waves size={14}/> Captação</button>
-                  <button onClick={() => adicionarNo('Tratamento', 'ETA', '#f59e0b')} style={btnComp}><Beaker size={14}/> ETA</button>
+                  <button onClick={() => adicionarNo('Tratamento', 'Tratamento', '#f59e0b')} style={btnComp}><Beaker size={14}/> Tratamento</button>
                   <button onClick={() => adicionarNo('Armazenamento', 'Reservatório', '#8b5cf6')} style={btnComp}><Droplets size={14}/> Reservatório</button>
                   <button onClick={() => adicionarNo('Macromedidor', 'Macromedidor', '#10b981')} style={btnComp}><Gauge size={14}/> Macromedidor</button>
                   <button onClick={() => adicionarNo('Iguá', 'Iguá', '#1e40af')} style={btnComp}><Droplet size={14}/> Iguá</button>
@@ -1307,6 +1381,31 @@ const FlowContent = () => {
                   setNodes(nds => nds.map(n => n.id === selecionado.id ? { ...n, data: { ...n.data, nodeId: val } } : n));
                 }} />
               </div>
+              {selecionado.data.tipo === 'Tratamento' && (
+                <>
+                  <div>
+                    <label style={labelSmall}>Concessionária</label>
+                    <input style={inputStyle} value={selecionado.data.concessionaria || ''} disabled={!modoEdicao} placeholder="Ex: ENERGISA" onChange={(e) => {
+                      const val = e.target.value;
+                      setNodes(nds => nds.map(n => n.id === selecionado.id ? { ...n, data: { ...n.data, concessionaria: val } } : n));
+                    }} />
+                  </div>
+                  <div>
+                    <label style={labelSmall}>UC</label>
+                    <input style={inputStyle} value={selecionado.data.uc || ''} disabled={!modoEdicao} placeholder="Ex: 123456" onChange={(e) => {
+                      const val = e.target.value;
+                      setNodes(nds => nds.map(n => n.id === selecionado.id ? { ...n, data: { ...n.data, uc: val } } : n));
+                    }} />
+                  </div>
+                  <div>
+                    <label style={labelSmall}>Medidor</label>
+                    <input style={inputStyle} value={selecionado.data.medidor || ''} disabled={!modoEdicao} placeholder="Ex: ABC-789" onChange={(e) => {
+                      const val = e.target.value;
+                      setNodes(nds => nds.map(n => n.id === selecionado.id ? { ...n, data: { ...n.data, medidor: val } } : n));
+                    }} />
+                  </div>
+                </>
+              )}
               <div>
                 <label style={labelSmall}>Detalhes</label>
                 <textarea style={{ ...inputStyle, height: '120px', resize: 'none', padding: '10px' }} value={selecionado.data.detalhes || ''} disabled={!modoEdicao} placeholder="Informações adicionais do nó..." onChange={(e) => {
