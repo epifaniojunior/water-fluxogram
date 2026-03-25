@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v1.7.8'; 
+const DEV_VERSION = 'v1.8.2'; 
 const STORAGE_KEY = 'fluxo_agua_v87_deso';
 
 const globalStyles = `
@@ -127,8 +127,19 @@ const NodeCustomizado = memo(({ data, selected }: any) => {
         {icons[data.tipo] || <Activity size={14} />}
         <div style={{ fontWeight: 600, fontSize: '10px', textTransform: 'uppercase' }}>{data.label}</div>
       </div>
-      <div style={{ padding: '12px', background: 'white', textAlign: 'center', borderTop: '1px solid #f1f5f9', minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>{data.nodeId || ""}</div>
+      <div style={{ padding: '12px', background: 'white', textAlign: 'center', borderTop: '1px solid #f1f5f9', minHeight: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', textTransform: 'uppercase' }}>{data.nodeId || ""}</div>
+        
+        {data.tipo === 'Tratamento' && (data.concessionaria || data.uc || data.medidor) && (
+          <>
+            <div style={{ width: '100%', height: '1px', background: '#cbd5e1', margin: '4px 0' }} />
+            <div style={{ fontSize: '10px', color: '#334155', textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: '2px', textTransform: 'uppercase', fontWeight: 800 }}>
+              {data.concessionaria && <div>Css. {data.concessionaria}</div>}
+              {data.uc && <div>UC {data.uc}</div>}
+              {data.medidor && <div>Med. {data.medidor}</div>}
+            </div>
+          </>
+        )}
       </div>
       <Handle type="source" position={Position.Top} id="t" /><Handle type="source" position={Position.Bottom} id="b" />
       <Handle type="source" position={Position.Left} id="l" /><Handle type="source" position={Position.Right} id="r" />
@@ -795,6 +806,12 @@ const FlowContent = () => {
     // A seleção em si é tratada pelo React Flow via onEdgesChange + multiSelectionKeyCode
   }, [setNodes]);
 
+  const onPaneClick = useCallback((event: React.MouseEvent) => {
+    // Se estiver segurando Shift, não limpa a seleção para permitir drag-box ou cliques múltiplos
+    if (event.shiftKey) return;
+    fecharPainel();
+  }, [fecharPainel]);
+
   const sincronizarTudoComNuvem = async () => {
     if (!supabaseConfigured) {
       mostrarAviso("Atenção", "Supabase não configurado. Verifique os Secrets.");
@@ -1165,7 +1182,7 @@ const FlowContent = () => {
               onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
               onNodeClick={onNodeClick} onEdgeClick={onEdgeClick} onSelectionChange={onSelectionChange} onSelectionEnd={onSelectionEnd}
               onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop}
-              onPaneClick={fecharPainel}
+              onPaneClick={onPaneClick}
             nodesDraggable={modoEdicao} nodesConnectable={modoEdicao}
             snapToGrid={modoEdicao} snapGrid={[20, 20]}
             deleteKeyCode={modoEdicao ? ["Backspace", "Delete"] : null}
@@ -1209,7 +1226,7 @@ const FlowContent = () => {
                 <div style={panelComponents}>
                   <p style={labelSmall}>Componentes</p>
                   <button onClick={() => adicionarNo('Captação', 'Captação', '#3b82f6')} style={btnComp}><Waves size={14}/> Captação</button>
-                  <button onClick={() => adicionarNo('Tratamento', 'ETA', '#f59e0b')} style={btnComp}><Beaker size={14}/> ETA</button>
+                  <button onClick={() => adicionarNo('Tratamento', 'Tratamento', '#f59e0b')} style={btnComp}><Beaker size={14}/> Tratamento</button>
                   <button onClick={() => adicionarNo('Armazenamento', 'Reservatório', '#8b5cf6')} style={btnComp}><Droplets size={14}/> Reservatório</button>
                   <button onClick={() => adicionarNo('Macromedidor', 'Macromedidor', '#10b981')} style={btnComp}><Gauge size={14}/> Macromedidor</button>
                   <button onClick={() => adicionarNo('Iguá', 'Iguá', '#1e40af')} style={btnComp}><Droplet size={14}/> Iguá</button>
@@ -1307,6 +1324,31 @@ const FlowContent = () => {
                   setNodes(nds => nds.map(n => n.id === selecionado.id ? { ...n, data: { ...n.data, nodeId: val } } : n));
                 }} />
               </div>
+              {selecionado.data.tipo === 'Tratamento' && (
+                <>
+                  <div>
+                    <label style={labelSmall}>Concessionária</label>
+                    <input style={inputStyle} value={selecionado.data.concessionaria || ''} disabled={!modoEdicao} placeholder="Ex: ENERGISA" onChange={(e) => {
+                      const val = e.target.value;
+                      setNodes(nds => nds.map(n => n.id === selecionado.id ? { ...n, data: { ...n.data, concessionaria: val } } : n));
+                    }} />
+                  </div>
+                  <div>
+                    <label style={labelSmall}>UC</label>
+                    <input style={inputStyle} value={selecionado.data.uc || ''} disabled={!modoEdicao} placeholder="Ex: 123456" onChange={(e) => {
+                      const val = e.target.value;
+                      setNodes(nds => nds.map(n => n.id === selecionado.id ? { ...n, data: { ...n.data, uc: val } } : n));
+                    }} />
+                  </div>
+                  <div>
+                    <label style={labelSmall}>Medidor</label>
+                    <input style={inputStyle} value={selecionado.data.medidor || ''} disabled={!modoEdicao} placeholder="Ex: ABC-789" onChange={(e) => {
+                      const val = e.target.value;
+                      setNodes(nds => nds.map(n => n.id === selecionado.id ? { ...n, data: { ...n.data, medidor: val } } : n));
+                    }} />
+                  </div>
+                </>
+              )}
               <div>
                 <label style={labelSmall}>Detalhes</label>
                 <textarea style={{ ...inputStyle, height: '120px', resize: 'none', padding: '10px' }} value={selecionado.data.detalhes || ''} disabled={!modoEdicao} placeholder="Informações adicionais do nó..." onChange={(e) => {
