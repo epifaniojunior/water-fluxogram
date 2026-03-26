@@ -17,83 +17,100 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { 
   X, Droplets, Gauge, Waves, Beaker, Ban, Activity, 
-  FileText, Copy, Droplet, Trash2, Plus, Zap, ArrowDown, MoveRight, Layers, Download, Upload, Clock, Database, ShieldAlert, Cloud, CloudOff, RefreshCw, FileDown
+  FileText, Copy, Droplet, Trash2, Plus, Zap, ArrowDown, MoveRight, Layers, Download, Upload, Clock, Database, ShieldAlert, Cloud, CloudOff, RefreshCw, FileDown, Printer
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
-import { toPng, toCanvas } from 'html-to-image';
+import { toPng, toJpeg, toCanvas } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v1.8.3'; 
-const STORAGE_KEY = 'fluxo_agua_v87_deso';
+const DEV_VERSION = 'v1.9.8'; 
+const STORAGE_KEY = 'fluxo_agua_v88_deso';
 
 const globalStyles = `
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', sans-serif; color: #1e293b; background: #f8fafc; user-select: none; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Inter', sans-serif; color: #1e293b; background: #f8fafc; user-select: none; overflow: hidden; }
   .react-flow__edge-path { stroke-linecap: round; transition: stroke 0.3s, stroke-width 0.3s; stroke-width: 4; }
   .react-flow__edge.selected .react-flow__edge-path { stroke-width: 6; stroke: #1e293b !important; }
   .react-flow__edge-text { fill: #1e293b; font-size: 13px; font-weight: 800; pointer-events: none; }
   .react-flow__edge-textbg { fill: white !important; fill-opacity: 1 !important; }
-  .react-flow__handle { width: 8px !important; height: 8px !important; background: #cbd5e1 !important; border: 2px solid white !important; }
+  .react-flow__handle { width: 10px !important; height: 10px !important; background: #cbd5e1 !important; border: 2px solid white !important; }
   .react-flow__selection { background: rgba(37, 99, 235, 0.1); border: 1px solid #2563eb; }
+  
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
   @keyframes glowPulse {
     0% { box-shadow: 0 0 0 0px rgba(59, 130, 246, 0.4); }
     70% { box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); }
     100% { box-shadow: 0 0 0 0px rgba(59, 130, 246, 0); }
   }
-  @keyframes searchHighlight {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
   }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
   .node-selected-pulse { animation: glowPulse 2s infinite; border-color: #3b82f6 !important; }
-  .node-search-highlight { animation: searchHighlight 1.5s infinite ease-in-out; z-index: 1000 !important; }
+  .bottom-sheet-enter { animation: slideUp 0.3s ease-out; }
+  .fade-in { animation: fadeIn 0.2s ease-out; }
   
   .search-input-container {
     position: relative;
-    margin-bottom: 12px;
+    width: 100%;
   }
   .search-input-container input {
     width: 100%;
-    padding: 8px 12px 8px 32px;
-    border-radius: 8px;
+    padding: 10px 12px 10px 36px;
+    border-radius: 12px;
     border: 1px solid #e2e8f0;
-    font-size: 12px;
+    font-size: 13px;
     outline: none;
     transition: all 0.2s;
+    background: #f8fafc;
   }
   .search-input-container input:focus {
     border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    background: white;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
   }
   .search-icon {
     position: absolute;
-    left: 10px;
+    left: 12px;
     top: 50%;
     transform: translateY(-50%);
     color: #94a3b8;
   }
-  .search-clear-btn {
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #94a3b8;
-    cursor: pointer;
-    border: none;
-    background: transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2px;
-    border-radius: 4px;
-    transition: all 0.2s;
-  }
-  .search-clear-btn:hover {
-    color: #ef4444;
-    background: #fee2e2;
+  
+  /* Mobile UI Overrides */
+  @media (max-width: 768px) {
+    .react-flow__controls {
+      display: flex;
+      flex-direction: row !important;
+      bottom: 20px !important;
+      left: 50% !important;
+      transform: translateX(-50%);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+      border: none !important;
+      background: white !important;
+      border-radius: 12px !important;
+      padding: 4px !important;
+    }
+    .react-flow__controls-button {
+      border-right: 1px solid #f1f5f9 !important;
+      border-bottom: none !important;
+      width: 36px !important;
+      height: 36px !important;
+    }
+    .react-flow__controls-button:last-child { border-right: none !important; }
   }
 `;
 
@@ -132,7 +149,7 @@ const NodeCustomizado = memo(({ data, selected }: any) => {
         
         {data.tipo === 'Tratamento' && (data.concessionaria || data.uc || data.medidor) && (
           <>
-            <div style={{ width: '100%', height: '1px', background: '#cbd5e1', margin: '4px 0' }} />
+            <div style={{ width: '100%', height: '1px', background: '#94a3b8', margin: '4px 0' }} />
             <div style={{ fontSize: '10px', color: '#334155', textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: '2px', textTransform: 'uppercase', fontWeight: 700 }}>
               {data.concessionaria && <div>Css. {data.concessionaria}</div>}
               {data.uc && <div>UC {data.uc}</div>}
@@ -163,6 +180,21 @@ const FlowContent = () => {
   const [termoPesquisaElementos, setTermoPesquisaElementos] = useState('');
   const [ordenacao, setOrdenacao] = useState<'nome' | 'data'>('data');
   const [showModalNovo, setShowModalNovo] = useState(false);
+  
+  // Função robusta para detectar se é um dispositivo móvel
+  const checkIsMobile = useCallback(() => {
+    const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+    const isMobileUA = /android|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+    const isSmallScreen = window.innerWidth <= 768;
+    const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    
+    // Consideramos mobile se for um User Agent de celular/tablet OU se a tela for pequena E tiver touch
+    return isMobileUA || (isSmallScreen && hasTouch);
+  }, []);
+
+  const [isMobileView, setIsMobileView] = useState(checkIsMobile());
+  const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [nomeNovoProjeto, setNomeNovoProjeto] = useState('');
   const [erroModal, setErroModal] = useState('');
   const [modalConfig, setModalConfig] = useState<{
@@ -173,6 +205,21 @@ const FlowContent = () => {
     onConfirm?: () => void;
     onCancel?: () => void;
   }>({ show: false, tipo: 'aviso', titulo: '', mensagem: '' });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = checkIsMobile();
+      setIsMobileView(mobile);
+      setIsLandscape(window.innerWidth > window.innerHeight);
+      if (mobile) setModoEdicao(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [checkIsMobile]);
+
+  useEffect(() => {
+    if (isMobileView) setModoEdicao(false);
+  }, [isMobileView]);
 
   const mostrarAviso = (titulo: string, mensagem: string | React.ReactNode) => {
     setModalConfig({ show: true, tipo: 'aviso', titulo, mensagem });
@@ -204,7 +251,7 @@ const FlowContent = () => {
   const nodeOffsetRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const globalBackupRef = useRef<HTMLInputElement>(null);
-  const { setCenter, fitView, deleteElements, fitBounds, getViewport } = useReactFlow();
+  const { setCenter, fitView, deleteElements, fitBounds, getViewport, setViewport } = useReactFlow();
 
   const nodesSelecionados = useMemo(() => nodes.filter(n => n.selected), [nodes]);
   const edgesSelecionadas = useMemo(() => edges.filter(e => e.selected), [edges]);
@@ -401,95 +448,99 @@ const FlowContent = () => {
 
   const exportarPDF = useCallback(async () => {
     const flowElement = document.querySelector('.react-flow') as HTMLElement;
-    if (!flowElement) return;
+    if (!flowElement || nodes.length === 0) return;
 
+    addDebugLog('Iniciando exportação PDF Otimizada (v1.9.9)...');
     setSyncStatus('syncing');
-    addDebugLog('Gerando PDF...');
 
     try {
-      // 1. Colocar zoom em visão geral
-      fitView({ duration: 0, padding: 0.2 });
-      // Esperar um pouco para o fitView completar
+      // 1. CÁLCULO DE LIMITES REAIS
+      const bounds = getRectOfNodes(nodes);
+      const padding = 60;
+      const titleHeight = 100;
+      
+      const virtualWidth = bounds.width + (padding * 2);
+      const virtualHeight = bounds.height + (padding * 2) + titleHeight;
+
+      // 2. CAPTURA COM CLONE MANUAL APERFEIÇOADO (v1.9.9)
+      // Criamos um container temporário no DOM para garantir herança de estilos
+      const tempContainer = document.createElement('div');
+      tempContainer.id = 'pdf-temp-container';
+      tempContainer.style.position = 'fixed';
+      tempContainer.style.top = '0';
+      tempContainer.style.left = '0';
+      tempContainer.style.width = virtualWidth + 'px';
+      tempContainer.style.height = virtualHeight + 'px';
+      tempContainer.style.zIndex = '-9999';
+      tempContainer.style.opacity = '0';
+      tempContainer.style.pointerEvents = 'none';
+      tempContainer.style.backgroundColor = '#f8fafc';
+      document.body.appendChild(tempContainer);
+
+      // Clonamos o elemento do fluxo
+      const clone = flowElement.cloneNode(true) as HTMLElement;
+      tempContainer.appendChild(clone);
+      
+      // Ajustamos o tamanho do clone
+      clone.style.width = '100%';
+      clone.style.height = '100%';
+      clone.style.position = 'relative';
+
+      // Localizamos a viewport interna no clone e forçamos o posicionamento centralizado
+      const viewport = clone.querySelector('.react-flow__viewport') as HTMLElement;
+      if (viewport) {
+        viewport.style.transformOrigin = '0 0';
+        const translateX = padding - bounds.x;
+        const translateY = padding + titleHeight - bounds.y;
+        viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(1)`;
+      }
+
+      // Removemos elementos de interface que não devem sair no PDF
+      const toHide = clone.querySelectorAll('.react-flow__controls, .react-flow__attribution, .search-input-container, .react-flow__panel, .react-flow__minimap');
+      toHide.forEach(el => (el as HTMLElement).style.display = 'none');
+
+      // Aguardamos um pouco mais para garantir que o navegador processe o clone e as fontes
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      // Ocultar controles e painéis para o print
-      const controls = document.querySelector('.react-flow__controls') as HTMLElement;
-      const attribution = document.querySelector('.react-flow__attribution') as HTMLElement;
-      const searchBox = document.querySelector('.search-input-container') as HTMLElement;
-      const panels = document.querySelectorAll('.react-flow__panel');
-      
-      if (controls) controls.style.display = 'none';
-      if (attribution) attribution.style.display = 'none';
-      if (searchBox) searchBox.parentElement!.style.display = 'none'; // Esconde o Panel que contém a pesquisa
-      panels.forEach(p => (p as HTMLElement).style.display = 'none');
-
-      // Adicionar título temporário no palco
-      const titleDiv = document.createElement('div');
-      titleDiv.innerText = projetoAtivo?.nome || 'PROJETO';
-      titleDiv.style.position = 'absolute';
-      titleDiv.style.top = '70px'; // Mais próximo dos elementos (que ficam centralizados pelo fitView)
-      titleDiv.style.left = '50%';
-      titleDiv.style.transform = 'translateX(-50%)';
-      titleDiv.style.fontSize = '44px'; // Dobro do tamanho anterior (22px * 2)
-      titleDiv.style.fontWeight = '900';
-      titleDiv.style.color = '#0f172a';
-      titleDiv.style.textTransform = 'uppercase';
-      titleDiv.style.letterSpacing = '3px';
-      titleDiv.style.zIndex = '1000';
-      titleDiv.style.textShadow = '0 2px 4px rgba(0,0,0,0.1)';
-      titleDiv.className = 'temp-pdf-title';
-      flowElement.appendChild(titleDiv);
-
-      // Forçar estilos de segurança nos labels antes da captura
-      const labels = flowElement.querySelectorAll('.react-flow__edge-textbg');
-      labels.forEach(l => {
-        (l as any).style.fill = 'white';
-        (l as any).style.fillOpacity = '1';
-        (l as any).setAttribute('fill', 'white');
-        (l as any).setAttribute('fill-opacity', '1');
-      });
-
-      // Delay para estabilização do DOM e renderização dos estilos
-      await new Promise(resolve => setTimeout(resolve, 400));
-
-      // Captura usando toPng com configurações de compatibilidade
-      const dataUrl = await toPng(flowElement, {
+      const dataUrl = await toJpeg(tempContainer, {
+        width: virtualWidth,
+        height: virtualHeight,
+        quality: 0.9,
+        pixelRatio: 1.5, // Aumentado levemente para melhor nitidez sem explodir o tamanho
         backgroundColor: '#f8fafc',
-        pixelRatio: 2,
-        cacheBust: true,
-        style: {
-          transform: 'scale(1)',
-        }
       });
 
-      // Restaura a interface
-      if (controls) controls.style.display = 'flex';
-      if (attribution) attribution.style.display = 'block';
-      if (searchBox) searchBox.parentElement!.style.display = 'block';
-      panels.forEach(p => (p as HTMLElement).style.display = 'block');
-      
-      // Remove título temporário
-      const tempTitle = flowElement.querySelector('.temp-pdf-title');
-      if (tempTitle) tempTitle.remove();
+      // Limpamos o container temporário
+      document.body.removeChild(tempContainer);
 
+      // 3. GERAR PDF
       const pdf = new jsPDF({
-        orientation: 'landscape',
+        orientation: virtualWidth > virtualHeight ? 'landscape' : 'portrait',
         unit: 'px',
-        format: [flowElement.offsetWidth, flowElement.offsetHeight]
+        format: [virtualWidth, virtualHeight]
       });
 
-      pdf.addImage(dataUrl, 'PNG', 0, 0, flowElement.offsetWidth, flowElement.offsetHeight);
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, virtualWidth, virtualHeight);
+
+      // 4. ADICIONAR TÍTULO
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(28);
+      pdf.setTextColor(15, 23, 42);
+      const title = (projetoAtivo?.nome || 'PROJETO').toUpperCase();
+      const titleWidth = pdf.getTextWidth(title);
+      pdf.text(title, (virtualWidth - titleWidth) / 2, 60);
+
       const timestamp = gerarTimestamp();
       pdf.save(`fluxograma-${projetoAtivo?.nome || 'projeto'}-${timestamp}.pdf`);
       
-      addDebugLog('PDF gerado com sucesso!');
+      addDebugLog('PDF gerado com sucesso (v1.9.9)!');
       setSyncStatus('synced');
     } catch (error) {
       console.error('Erro ao exportar PDF:', error);
       addDebugLog('Erro ao gerar PDF');
       setSyncStatus('error');
     }
-  }, [projetoAtivo, addDebugLog, fitView]);
+  }, [nodes, projetoAtivo, addDebugLog]);
 
   const fecharPainel = useCallback(() => {
     setNodes(nds => nds.map(n => ({ ...n, selected: false })));
@@ -900,279 +951,410 @@ const FlowContent = () => {
   };
 
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', overflow: 'hidden' }}>
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', overflow: 'hidden', flexDirection: isMobileView ? 'column' : 'row' }}>
       <style>{globalStyles}</style>
 
-      {/* SIDEBAR ESQUERDA */}
-      <div style={{ width: '280px', background: '#ffffff', display: 'flex', flexDirection: 'column', borderRight: '1px solid #e2e8f0', zIndex: 10 }}>
-        {/* HEADER DA SIDEBAR */}
-        <div style={{ padding: '30px 24px', borderBottom: '1px solid #f1f5f9' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ background: '#2563eb', padding: '8px', borderRadius: '10px' }}><Droplet size={20} color="white" fill="white"/></div>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <h2 style={{ fontSize: '11px', fontWeight: 800, color: '#1e3a8a', lineHeight: 1.2, textTransform: 'uppercase' }}>
-                Sistemas de Produção <span style={{ color: '#3b82f6' }}>DESO</span>
-              </h2>
-              <div style={versionBadgeStyle}>BUILD {DEV_VERSION}</div>
-            </div>
-          </div>
-        </div>
-        
-        {/* BOTÕES DE TOPO */}
-        <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <button 
-            disabled={!modoEdicao}
-            onClick={() => {
-              if (!modoEdicao) return;
-              setErroModal('');
-              setNomeNovoProjeto('');
-              setShowModalNovo(true);
-            }} 
+      {/* SIDEBAR ESQUERDA - Oculta no Mobile ou exibida como Overlay */}
+      {(!isMobileView || showMobileMenu) && (
+        <div 
+          className={isMobileView ? "fade-in" : ""}
+          style={{ 
+            width: isMobileView ? '100%' : '280px', 
+            height: '100%',
+            position: isMobileView ? 'fixed' : 'relative',
+            top: 0, left: 0,
+            background: isMobileView ? 'rgba(15, 23, 42, 0.4)' : '#ffffff', 
+            backdropFilter: isMobileView ? 'blur(4px)' : 'none',
+            display: 'flex', 
+            flexDirection: 'column', 
+            zIndex: 2000 
+          }}
+          onClick={() => isMobileView && setShowMobileMenu(false)}
+        >
+          <div 
             style={{ 
-              ...btnNovoProjeto, 
-              opacity: modoEdicao ? 1 : 0.5, 
-              cursor: modoEdicao ? 'pointer' : 'not-allowed',
-              filter: modoEdicao ? 'none' : 'grayscale(0.5)'
+              width: isMobileView ? '85%' : '100%',
+              height: '100%',
+              background: 'white',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: isMobileView ? '20px 0 50px rgba(0,0,0,0.2)' : 'none',
+              borderRight: isMobileView ? 'none' : '1px solid #e2e8f0',
             }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <Plus size={14} /> + Novo Projeto
-          </button>
-          
-          <button onClick={() => fileInputRef.current?.click()} style={btnImportar}>
-            <Upload size={14} /> Importar Arquivo JSON
-          </button>
-          <input type="file" ref={fileInputRef} onChange={lidarComImportacaoIndividual} accept=".json" style={{ display: 'none' }} />
-        </div>
-
-        {/* LISTA DE SISTEMAS (SCROLLABLE) */}
-        <div style={{ flexGrow: 1, overflowY: 'auto', padding: '10px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <p style={labelSmall}>Sistemas Ativos</p>
-            <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{projetosFiltrados.length}</span>
-          </div>
-
-          {/* OPÇÕES DE ORDENAÇÃO */}
-          <div style={{ display: 'flex', gap: '4px', marginBottom: '12px' }}>
-            <button 
-              onClick={() => setOrdenacao('data')}
-              style={{
-                ...btnMiniSort,
-                background: ordenacao === 'data' ? '#eff6ff' : 'transparent',
-                color: ordenacao === 'data' ? '#2563eb' : '#94a3b8',
-                borderColor: ordenacao === 'data' ? '#dbeafe' : 'transparent'
-              }}
-            >
-              <Clock size={10} style={{marginRight: '4px'}}/> Recentes
-            </button>
-            <button 
-              onClick={() => setOrdenacao('nome')}
-              style={{
-                ...btnMiniSort,
-                background: ordenacao === 'nome' ? '#eff6ff' : 'transparent',
-                color: ordenacao === 'nome' ? '#2563eb' : '#94a3b8',
-                borderColor: ordenacao === 'nome' ? '#dbeafe' : 'transparent'
-              }}
-            >
-              <Activity size={10} style={{marginRight: '4px'}}/> A-Z
-            </button>
-          </div>
-
-          {projetosFiltrados.map(p => (
-            <div key={p.id} onClick={() => {
-              if (projetoAtivoId !== p.id) {
-                // Salva o estado atual antes de trocar
-                const currentNodes = nodesRef.current;
-                const currentEdges = edgesRef.current;
-                setProjetos(prev => prev.map(proj => proj.id === projetoAtivoId ? { ...proj, nodes: currentNodes, edges: currentEdges } : proj));
-                setProjetoAtivoId(p.id);
-              }
-            }} 
-              style={{ ...itemProjeto, background: projetoAtivoId === p.id ? '#eff6ff' : 'transparent', borderColor: projetoAtivoId === p.id ? '#dbeafe' : 'transparent' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
-                <FileText size={15} color={projetoAtivoId === p.id ? '#3b82f6' : '#94a3b8'} />
-                <span style={{ fontSize: '11px', fontWeight: 600, color: projetoAtivoId === p.id ? '#1e40af' : '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.nome}</span>
+            {/* HEADER DA SIDEBAR */}
+            <div style={{ padding: '24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: '#2563eb', padding: '10px', borderRadius: '12px' }}><Droplet size={22} color="white" fill="white"/></div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <h2 style={{ fontSize: '12px', fontWeight: 800, color: '#1e3a8a', lineHeight: 1.2, textTransform: 'uppercase' }}>
+                    Sistemas <span style={{ color: '#3b82f6' }}>DESO</span>
+                  </h2>
+                  <div style={versionBadgeStyle}>BUILD {DEV_VERSION}</div>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: '2px' }}>
-                <button onClick={(e) => { e.stopPropagation(); exportarSistema(p); }} style={btnMini} title="Exportar individual"><Download size={12} /></button>
-                <button onClick={(e) => { 
-                  e.stopPropagation(); 
-                  if (!modoEdicao) return;
-                  const pCopia = { ...p, id: generateUUID(), nome: `${p.nome} (CÓPIA)`, updated_at: new Date().toISOString() };
-                  
-                  if (supabaseConfigured) {
-                    supabase.from('projetos').insert([pCopia]).select().then(({data, error}) => {
-                      if (error) {
-                        mostrarAviso("Erro ao Copiar", `Erro ao copiar: ${error.message}`);
-                        return;
-                      }
-                      if (data) {
-                        setProjetos([...projetos, data[0]]);
-                        setProjetoAtivoId(data[0].id);
-                      }
-                    });
-                  } else {
-                    setProjetos([...projetos, pCopia]);
-                    setProjetoAtivoId(pCopia.id);
-                  }
-                }} 
-                style={{ 
-                  ...btnMini, 
-                  opacity: modoEdicao ? 1 : 0.4, 
-                  cursor: modoEdicao ? 'pointer' : 'not-allowed' 
-                }} 
-                title={modoEdicao ? "Copiar" : "Modo Edição necessário para copiar"}
-              >
-                <Copy size={12} />
-              </button>
-                <button onClick={(e) => { 
-                  e.stopPropagation(); 
-                  if (projetos.length > 1) { 
-                    mostrarConfirmacao(
-                      "Excluir Sistema",
-                      `Deseja realmente excluir o sistema "${p.nome}"? Esta ação não pode ser desfeita.`,
-                      () => {
-                        if (supabaseConfigured) {
-                          supabase.from('projetos').delete().eq('id', p.id).then(({ error }) => {
-                            if (error) {
-                              mostrarAviso("Erro ao Excluir", `Erro ao excluir na nuvem: ${error.message}`);
-                              return;
-                            }
-                            setProjetos(prev => {
-                              const novos = prev.filter(x => x.id !== p.id); 
-                              if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
-                              return novos;
-                            });
-                            addDebugLog(`Projeto excluído: ${p.nome}`);
-                          });
-                        } else {
-                          setProjetos(prev => {
-                            const novos = prev.filter(x => x.id !== p.id); 
-                            if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
-                            return novos;
-                          });
-                          addDebugLog(`Projeto local excluído: ${p.nome}`);
-                        }
-                      }
-                    );
-                  } else {
-                    mostrarAviso("Atenção", "Não é possível excluir o último sistema. É necessário ter ao menos um sistema ativo.");
-                  }
-                }} style={{ ...btnMini, color: '#ef4444' }} title="Apagar"><Trash2 size={12} /></button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* BOTÕES DE BACKUP GLOBAL (PARTE INFERIOR) */}
-        <div style={{ padding: '16px', borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
-          <p style={{...labelSmall, marginBottom: '10px'}}>Manutenção de Banco</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <button onClick={() => exportarBackupGlobal()} style={btnBackupOp} title="Backup Geral">
-                <Database size={13} /> Backup Total
-              </button>
-              <button onClick={() => globalBackupRef.current?.click()} style={{...btnBackupOp, borderColor: '#fecdd3'}} title="Restaurar Tudo">
-                <ShieldAlert size={13} color="#ef4444" /> Restaurar
-              </button>
-            </div>
-            {supabaseConfigured && (
-              <button onClick={sincronizarTudoComNuvem} style={{...btnBackupOp, background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534'}} title="Sincronizar tudo com a nuvem">
-                <RefreshCw size={13} color="#16a34a" /> Sincronizar com Nuvem
-              </button>
-            )}
-          </div>
-          <input type="file" ref={globalBackupRef} onChange={restaurarBackupGlobal} accept=".json" style={{ display: 'none' }} />
-        </div>
-
-        {/* CONSOLE DE DEPURAÇÃO (DEBUG) */}
-        <div style={{ padding: '12px', borderTop: '1px solid #f1f5f9', background: '#1e293b', color: '#94a3b8', fontSize: '9px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
-          <p style={{ color: '#3b82f6', fontWeight: 800, marginBottom: '5px', fontSize: '10px' }}>LOG DE SINCRONIZAÇÃO</p>
-          {debugLogs.length === 0 ? (
-            <p>Nenhuma atividade registrada.</p>
-          ) : (
-            debugLogs.map((log, i) => <p key={i} style={{ marginBottom: '2px' }}>{log}</p>)
-          )}
-        </div>
-      </div>
-
-      <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-        <div style={headerStyle}>
-          {/* LADO ESQUERDO: BOTÃO DE MODO E PESQUISA GERAL */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1 }}>
-            <button onClick={() => { 
-              if (!modoEdicao) {
-                const isMobile = window.innerWidth <= 768;
-                if (isMobile) {
-                  mostrarAviso("Dispositivo Móvel", "O Modo Edição não está disponível em dispositivos móveis para garantir a precisão do fluxograma.");
-                  return;
-                }
-              }
-              if (modoEdicao) {
-                salvarNoSupabase();
-              }
-              setModoEdicao(!modoEdicao); 
-              fecharPainel(); 
-            }} style={{ ...btnPrimario, background: modoEdicao ? '#ef4444' : '#2563eb', whiteSpace: 'nowrap' }}>
-              {modoEdicao ? 'Salvar Sistema' : 'Modo Edição'}
-            </button>
-
-            <div className="search-input-container" style={{ marginBottom: 0, width: '250px' }}>
-              <Activity size={14} className="search-icon" />
-              <input 
-                type="text" 
-                placeholder="Pesquisa Geral..." 
-                value={termoPesquisaProjetos}
-                onChange={(e) => setTermoPesquisaProjetos(e.target.value)}
-                style={{ background: '#f8fafc', paddingRight: '30px' }}
-              />
-              {termoPesquisaProjetos && (
-                <button className="search-clear-btn" onClick={() => setTermoPesquisaProjetos('')} title="Limpar pesquisa">
-                  <X size={12} />
-                </button>
+              {isMobileView && (
+                <button onClick={() => setShowMobileMenu(false)} style={btnClose}><X size={24} /></button>
               )}
             </div>
+
+            {isMobileView && (
+              <div style={{ padding: '12px 24px', background: '#fff1f2', borderBottom: '1px solid #fecdd3' }}>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Ban size={12} /> Modo Somente Leitura Ativo
+                </div>
+              </div>
+            )}
+            
+            {/* BOTÕES DE TOPO - Desabilitados no Mobile */}
+            {!isMobileView && (
+              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button 
+                  disabled={!modoEdicao}
+                  onClick={() => {
+                    if (!modoEdicao) return;
+                    setErroModal('');
+                    setNomeNovoProjeto('');
+                    setShowModalNovo(true);
+                  }} 
+                  style={{ 
+                    ...btnNovoProjeto, 
+                    opacity: modoEdicao ? 1 : 0.5, 
+                    cursor: modoEdicao ? 'pointer' : 'not-allowed',
+                    filter: modoEdicao ? 'none' : 'grayscale(0.5)'
+                  }}
+                >
+                  <Plus size={14} /> + Novo Projeto
+                </button>
+                
+                <button onClick={() => fileInputRef.current?.click()} style={btnImportar}>
+                  <Upload size={14} /> Importar Arquivo JSON
+                </button>
+                <input type="file" ref={fileInputRef} onChange={lidarComImportacaoIndividual} accept=".json" style={{ display: 'none' }} />
+              </div>
+            )}
+
+            {/* LISTA DE SISTEMAS (SCROLLABLE) */}
+            <div style={{ flexGrow: 1, overflowY: 'auto', padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <p style={labelSmall}>Sistemas Disponíveis</p>
+                <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>{projetosFiltrados.length}</span>
+              </div>
+
+              {/* OPÇÕES DE ORDENAÇÃO */}
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+                <button 
+                  onClick={() => setOrdenacao('data')}
+                  style={{
+                    ...btnMiniSort,
+                    background: ordenacao === 'data' ? '#eff6ff' : '#f8fafc',
+                    color: ordenacao === 'data' ? '#2563eb' : '#64748b',
+                    borderColor: ordenacao === 'data' ? '#dbeafe' : '#e2e8f0',
+                    padding: '8px'
+                  }}
+                >
+                  <Clock size={12} style={{marginRight: '6px'}}/> Recentes
+                </button>
+                <button 
+                  onClick={() => setOrdenacao('nome')}
+                  style={{
+                    ...btnMiniSort,
+                    background: ordenacao === 'nome' ? '#eff6ff' : '#f8fafc',
+                    color: ordenacao === 'nome' ? '#2563eb' : '#64748b',
+                    borderColor: ordenacao === 'nome' ? '#dbeafe' : '#e2e8f0',
+                    padding: '8px'
+                  }}
+                >
+                  <Activity size={12} style={{marginRight: '6px'}}/> A-Z
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {projetosFiltrados.map(p => (
+                  <div key={p.id} onClick={() => {
+                    if (projetoAtivoId !== p.id) {
+                      const currentNodes = nodesRef.current;
+                      const currentEdges = edgesRef.current;
+                      setProjetos(prev => prev.map(proj => proj.id === projetoAtivoId ? { ...proj, nodes: currentNodes, edges: currentEdges } : proj));
+                      setProjetoAtivoId(p.id);
+                      if (isMobileView) setShowMobileMenu(false);
+                    }
+                  }} 
+                    style={{ 
+                      ...itemProjeto, 
+                      padding: isMobileView ? '14px' : '10px',
+                      background: projetoAtivoId === p.id ? '#eff6ff' : 'transparent', 
+                      borderColor: projetoAtivoId === p.id ? '#dbeafe' : 'transparent' 
+                    }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden', flex: 1 }}>
+                      <FileText size={18} color={projetoAtivoId === p.id ? '#3b82f6' : '#94a3b8'} />
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: projetoAtivoId === p.id ? '#1e40af' : '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.nome}</span>
+                    </div>
+                    {!isMobileView && (
+                      <div style={{ display: 'flex', gap: '2px' }}>
+                        <button onClick={(e) => { e.stopPropagation(); exportarSistema(p); }} style={btnMini} title="Exportar individual"><Download size={12} /></button>
+                        <button onClick={(e) => { 
+                          e.stopPropagation(); 
+                          if (!modoEdicao) return;
+                          const pCopia = { ...p, id: generateUUID(), nome: `${p.nome} (CÓPIA)`, updated_at: new Date().toISOString() };
+                          
+                          if (supabaseConfigured) {
+                            supabase.from('projetos').insert([pCopia]).select().then(({data, error}) => {
+                              if (error) {
+                                mostrarAviso("Erro ao Copiar", `Erro ao copiar: ${error.message}`);
+                                return;
+                              }
+                              if (data) {
+                                setProjetos([...projetos, data[0]]);
+                                setProjetoAtivoId(data[0].id);
+                              }
+                            });
+                          } else {
+                            setProjetos([...projetos, pCopia]);
+                            setProjetoAtivoId(pCopia.id);
+                          }
+                        }} 
+                        style={{ 
+                          ...btnMini, 
+                          opacity: modoEdicao ? 1 : 0.4, 
+                          cursor: modoEdicao ? 'pointer' : 'not-allowed' 
+                        }} 
+                        title={modoEdicao ? "Copiar" : "Modo Edição necessário para copiar"}
+                      >
+                        <Copy size={12} />
+                      </button>
+                        <button onClick={(e) => { 
+                          e.stopPropagation(); 
+                          if (projetos.length > 1) { 
+                            mostrarConfirmacao(
+                              "Excluir Sistema",
+                              `Deseja realmente excluir o sistema "${p.nome}"? Esta ação não pode ser desfeita.`,
+                              () => {
+                                if (supabaseConfigured) {
+                                  supabase.from('projetos').delete().eq('id', p.id).then(({ error }) => {
+                                    if (error) {
+                                      mostrarAviso("Erro ao Excluir", `Erro ao excluir na nuvem: ${error.message}`);
+                                      return;
+                                    }
+                                    setProjetos(prev => {
+                                      const novos = prev.filter(x => x.id !== p.id); 
+                                      if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
+                                      return novos;
+                                    });
+                                    addDebugLog(`Projeto excluído: ${p.nome}`);
+                                  });
+                                } else {
+                                  setProjetos(prev => {
+                                    const novos = prev.filter(x => x.id !== p.id); 
+                                    if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
+                                    return novos;
+                                  });
+                                  addDebugLog(`Projeto local excluído: ${p.nome}`);
+                                }
+                              }
+                            );
+                          } else {
+                            mostrarAviso("Atenção", "Não é possível excluir o último sistema. É necessário ter ao menos um sistema ativo.");
+                          }
+                        }} style={{ ...btnMini, color: '#ef4444' }} title="Apagar"><Trash2 size={12} /></button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* BOTÕES DE BACKUP GLOBAL - Ocultos no Mobile */}
+            {!isMobileView && (
+              <div style={{ padding: '16px', borderTop: '1px solid #f1f5f9', background: '#fafafa' }}>
+                <p style={{...labelSmall, marginBottom: '10px'}}>Manutenção de Banco</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <button onClick={() => exportarBackupGlobal()} style={btnBackupOp} title="Backup Geral">
+                      <Database size={13} /> Backup Total
+                    </button>
+                    <button onClick={() => globalBackupRef.current?.click()} style={{...btnBackupOp, borderColor: '#fecdd3'}} title="Restaurar Tudo">
+                      <ShieldAlert size={13} color="#ef4444" /> Restaurar
+                    </button>
+                  </div>
+                  {supabaseConfigured && (
+                    <button onClick={sincronizarTudoComNuvem} style={{...btnBackupOp, background: '#f0fdf4', borderColor: '#bbf7d0', color: '#166534'}} title="Sincronizar tudo com a nuvem">
+                      <RefreshCw size={13} color="#16a34a" /> Sincronizar com Nuvem
+                    </button>
+                  )}
+                </div>
+                <input type="file" ref={globalBackupRef} onChange={restaurarBackupGlobal} accept=".json" style={{ display: 'none' }} />
+              </div>
+            )}
+
+            {/* CONSOLE DE DEPURAÇÃO - Oculto no Mobile */}
+            {!isMobileView && (
+              <div style={{ padding: '12px', borderTop: '1px solid #f1f5f9', background: '#1e293b', color: '#94a3b8', fontSize: '9px', fontFamily: 'monospace', maxHeight: '150px', overflowY: 'auto' }}>
+                <p style={{ color: '#3b82f6', fontWeight: 800, marginBottom: '5px', fontSize: '10px' }}>LOG DE SINCRONIZAÇÃO</p>
+                {debugLogs.length === 0 ? (
+                  <p>Nenhuma atividade registrada.</p>
+                ) : (
+                  debugLogs.map((log, i) => <p key={i} style={{ marginBottom: '2px' }}>{log}</p>)
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ 
+          ...headerStyle, 
+          height: isMobileView ? (isLandscape ? '56px' : '72px') : '80px', 
+          padding: isMobileView ? '0 16px' : '0 30px', 
+          flexDirection: 'row', 
+          gap: '12px',
+          justifyContent: 'space-between',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.05)'
+        }}>
+          {/* LADO ESQUERDO: BOTÃO DE MODO E PESQUISA GERAL */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: isLandscape ? '0 0 auto' : 1 }}>
+            {isMobileView ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button 
+                  onClick={() => setShowMobileMenu(true)} 
+                  style={{ 
+                    ...btnSecundario, 
+                    padding: '10px', 
+                    borderRadius: '12px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0'
+                  }}
+                >
+                  <Layers size={22} color="#1e293b" />
+                </button>
+                <div style={{ 
+                  fontSize: '9px', 
+                  fontWeight: 900, 
+                  color: '#3b82f6', 
+                  background: '#eff6ff', 
+                  padding: '2px 8px', 
+                  borderRadius: '6px', 
+                  textTransform: 'uppercase', 
+                  border: '1px solid #dbeafe',
+                  letterSpacing: '0.5px'
+                }}>
+                  Consulta
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => { 
+                if (!modoEdicao) {
+                  const isMobile = window.innerWidth <= 768;
+                  if (isMobile) {
+                    mostrarAviso("Dispositivo Móvel", "O Modo Edição não está disponível em dispositivos móveis para garantir a precisão do fluxograma.");
+                    return;
+                  }
+                }
+                if (modoEdicao) {
+                  salvarNoSupabase();
+                }
+                setModoEdicao(!modoEdicao); 
+                fecharPainel(); 
+              }} style={{ ...btnPrimario, background: modoEdicao ? '#ef4444' : '#2563eb', whiteSpace: 'nowrap' }}>
+                {modoEdicao ? 'Salvar Sistema' : 'Modo Edição'}
+              </button>
+            )}
+
+            {!isMobileView && (
+              <div className="search-input-container" style={{ width: '250px' }}>
+                <Activity size={14} className="search-icon" />
+                <input 
+                  type="text" 
+                  placeholder="Pesquisa Geral..." 
+                  value={termoPesquisaProjetos}
+                  onChange={(e) => setTermoPesquisaProjetos(e.target.value)}
+                />
+              </div>
+            )}
           </div>
 
           {/* CENTRO: TÍTULO DO PROJETO */}
-          <div style={{ flex: 1, textAlign: 'center', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ 
+            flex: 3, 
+            textAlign: 'center', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            justifyContent: 'center', 
+            alignItems: 'center',
+            overflow: 'hidden',
+            padding: '0 5px'
+          }}>
             {modoEdicao ? (
               <input value={projetoAtivo?.nome || ''} 
                 onChange={(e) => setProjetos(projetos.map(p => p.id === projetoAtivoId ? {...p, nome: e.target.value.toUpperCase()} : p))} 
-                style={{ ...inputHeader, textAlign: 'center', width: 'auto', minWidth: '300px' }} />
+                style={{ ...inputHeader, textAlign: 'center', width: '100%', maxWidth: '400px' }} />
             ) : (
-              <h1 style={{ fontSize: '18px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <h1 style={{ 
+                fontSize: isMobileView ? '18px' : '20px', 
+                fontWeight: 900, 
+                color: '#1e293b', 
+                textTransform: 'uppercase', 
+                letterSpacing: '0.8px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                width: '100%'
+              }}>
                 {projetoAtivo?.nome}
               </h1>
             )}
           </div>
 
           {/* LADO DIREITO: BOTÕES DE VISÃO/PDF E STATUS */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
-            <button onClick={() => fitView({ duration: 800, padding: 0.4 })} style={btnSecundario}>Visão Geral</button>
-            
-            <button onClick={exportarPDF} style={{...btnSecundario, borderColor: '#3b82f6', color: '#3b82f6', whiteSpace: 'nowrap'}}>
-              <FileDown size={14} style={{marginRight: '5px'}}/> Exportar PDF
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: isLandscape ? '0 0 auto' : 1, justifyContent: 'flex-end' }}>
+            {isMobileView && (
+              <button 
+                onClick={exportarPDF} 
+                style={{ 
+                  ...btnSecundario, 
+                  padding: '10px', 
+                  borderRadius: '12px',
+                  background: '#f0f9ff',
+                  borderColor: '#bae6fd',
+                  color: '#0369a1',
+                  minWidth: '44px'
+                }}
+                title="Exportar PDF"
+              >
+                <Printer size={20} />
+              </button>
+            )}
+
+            <button 
+              onClick={() => fitView({ duration: 800, padding: 0.4 })} 
+              style={{ 
+                ...btnSecundario, 
+                padding: isMobileView ? '10px' : '10px 20px', 
+                borderRadius: '12px',
+                minWidth: isMobileView ? '44px' : 'auto'
+              }}
+            >
+              {isMobileView ? <Zap size={20} /> : 'Visão Geral'}
             </button>
+            
+            {!isMobileView && (
+              <button onClick={exportarPDF} style={{...btnSecundario, borderColor: '#3b82f6', color: '#3b82f6', whiteSpace: 'nowrap'}}>
+                <FileDown size={14} style={{marginRight: '5px'}}/> Exportar PDF
+              </button>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               {syncStatus === 'syncing' && <RefreshCw size={14} className="animate-spin" color="#3b82f6" />}
               {syncStatus === 'synced' && <Cloud size={14} color="#10b981" />}
               {syncStatus === 'error' && <CloudOff size={14} color="#ef4444" />}
-              <span style={{ fontSize: '10px', fontWeight: 700, color: syncStatus === 'error' ? '#ef4444' : '#64748b' }}>
-                {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? 'Nuvem OK' : 'Erro de Conexão'}
-              </span>
+              {!isMobileView && (
+                <span style={{ fontSize: '10px', fontWeight: 700, color: syncStatus === 'error' ? '#ef4444' : '#64748b' }}>
+                  {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? 'Nuvem OK' : 'Erro'}
+                </span>
+              )}
             </div>
-
-            {(!supabaseConfigured || supabaseError) && (
-              <div style={{ background: '#fff7ed', border: '1px solid #ffedd5', padding: '6px 12px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <ShieldAlert size={14} color="#f97316" />
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '9px', fontWeight: 800, color: '#9a3412', lineHeight: 1 }}>
-                    {!supabaseConfigured ? 'OFFLINE' : 'ERRO'}
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1190,26 +1372,24 @@ const FlowContent = () => {
             connectionMode={ConnectionMode.Loose}
             multiSelectionKeyCode="Shift"
             selectionKeyCode="Shift"
+            panOnScroll={isMobileView}
+            zoomOnPinch={true}
+            preventScrolling={true}
           >
             <Background color="#cbd5e1" variant={BackgroundVariant.Dots} gap={20} />
-            <Controls />
+            {/* Controls removidos conforme solicitação do usuário */}
 
             {/* PESQUISA NO FLUXOGRAMA (LOCAL) */}
-            <Panel position="top-left" style={{ marginTop: '20px', marginLeft: '20px' }}>
-              <div className="search-input-container" style={{ marginBottom: 0, width: '220px' }}>
+            <Panel position="top-left" style={{ marginTop: '16px', marginLeft: '16px' }}>
+              <div className="search-input-container" style={{ width: isMobileView ? '180px' : '220px' }}>
                 <Zap size={14} className="search-icon" />
                 <input 
                   type="text" 
-                  placeholder="Pesquisar neste fluxograma..." 
+                  placeholder="Pesquisar nó..." 
                   value={termoPesquisaElementos}
                   onChange={(e) => setTermoPesquisaElementos(e.target.value)}
-                  style={{ background: 'white', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', paddingRight: '30px' }}
+                  style={{ background: 'white', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: 'none' }}
                 />
-                {termoPesquisaElementos && (
-                  <button className="search-clear-btn" onClick={() => setTermoPesquisaElementos('')} title="Limpar pesquisa">
-                    <X size={12} />
-                  </button>
-                )}
               </div>
             </Panel>
 
@@ -1240,12 +1420,32 @@ const FlowContent = () => {
 
       {/* PAINEL DIREITO */}
       {selecionado && (
-        <div style={sidePanel}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 700 }}>
+        <div 
+          className={isMobileView && !isLandscape ? "bottom-sheet-enter" : "fade-in"}
+          style={{
+            ...sidePanel,
+            width: isMobileView ? (isLandscape ? '280px' : '100%') : '300px',
+            height: isMobileView && !isLandscape ? '65vh' : 'auto',
+            top: isMobileView ? (isLandscape ? '66px' : 'auto') : '96px',
+            bottom: isMobileView ? (isLandscape ? '10px' : '0') : '16px',
+            right: isMobileView ? (isLandscape ? '10px' : '0') : '16px',
+            left: isMobileView && !isLandscape ? '0' : 'auto',
+            borderRadius: isMobileView && !isLandscape ? '24px 24px 0 0' : '20px',
+            padding: isMobileView ? '24px' : '28px',
+            boxShadow: isMobileView ? '0 -15px 40px rgba(0,0,0,0.15)' : '0 0 30px rgba(0,0,0,0.08)',
+            overflowY: 'auto'
+          }}
+        >
+          {/* DRAG HANDLE PARA MOBILE */}
+          {isMobileView && !isLandscape && (
+            <div style={{ width: '40px', height: '4px', background: '#e2e8f0', borderRadius: '10px', margin: '-12px auto 16px auto' }} />
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h3 style={{ fontSize: isMobileView ? '14px' : '16px', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               {selecionado.type === 'bulk' ? `Edição em Massa` : 'Configurações'}
             </h3>
-            <button onClick={fecharPainel} style={btnClose}><X size={18} /></button>
+            <button onClick={fecharPainel} style={btnClose}><X size={20} /></button>
           </div>
           
           {selecionado.type === 'bulk' ? (
