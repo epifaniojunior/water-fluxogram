@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v2.0.56'; 
+const DEV_VERSION = 'v2.0.57'; 
 const STORAGE_KEY = 'fluxo_agua_v88_deso';
 
 const globalStyles = `
@@ -88,6 +88,24 @@ const globalStyles = `
     top: 50%;
     transform: translateY(-50%);
     color: #94a3b8;
+  }
+  .clear-search-icon {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 50%;
+  }
+  .clear-search-icon:hover {
+    color: #ef4444;
+    background: #fee2e2;
   }
   
   /* Mobile UI Overrides */
@@ -857,8 +875,11 @@ const FlowContent = () => {
     const selectedNodes = nodes.filter(n => n.selected);
     if (selectedNodes.length < 2) return;
     
-    // Alinhamento no eixo Y (média)
-    const avgY = selectedNodes.reduce((acc, n) => acc + n.position.y, 0) / selectedNodes.length;
+    // Alinhamento no eixo Y (média dos centros verticais para alinhar os handles laterais)
+    const avgCenterY = selectedNodes.reduce((acc, n) => {
+      const h = (n as any).height || (n as any).measured?.height || 100;
+      return acc + n.position.y + h / 2;
+    }, 0) / selectedNodes.length;
     
     // Distribuição no eixo X (equidistante com espaçamento mínimo)
     const sortedNodes = [...selectedNodes].sort((a, b) => a.position.x - b.position.x);
@@ -876,7 +897,8 @@ const FlowContent = () => {
     
     const newPositions = new Map();
     sortedNodes.forEach((n, i) => {
-      newPositions.set(n.id, { x: minX + (i * step), y: avgY });
+      const h = (n as any).height || (n as any).measured?.height || 100;
+      newPositions.set(n.id, { x: minX + (i * step), y: avgCenterY - h / 2 });
     });
     
     setNodes(nds => nds.map(n => {
@@ -1367,6 +1389,11 @@ const FlowContent = () => {
                   value={termoPesquisaProjetos}
                   onChange={(e) => setTermoPesquisaProjetos(e.target.value)}
                 />
+                {termoPesquisaProjetos && (
+                  <div className="clear-search-icon" onClick={() => setTermoPesquisaProjetos('')}>
+                    <X size={14} />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1497,6 +1524,11 @@ const FlowContent = () => {
                   onChange={(e) => setTermoPesquisaElementos(e.target.value)}
                   style={{ background: 'white', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: 'none' }}
                 />
+                {termoPesquisaElementos && (
+                  <div className="clear-search-icon" onClick={() => setTermoPesquisaElementos('')}>
+                    <X size={14} />
+                  </div>
+                )}
               </div>
             </Panel>
 
