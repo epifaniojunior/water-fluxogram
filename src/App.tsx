@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v2.0.53'; 
+const DEV_VERSION = 'v2.0.54'; 
 const STORAGE_KEY = 'fluxo_agua_v88_deso';
 
 const globalStyles = `
@@ -178,6 +178,7 @@ const FlowContent = () => {
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [termoPesquisaProjetos, setTermoPesquisaProjetos] = useState('');
   const [termoPesquisaElementos, setTermoPesquisaElementos] = useState('');
+  const [shiftPressed, setShiftPressed] = useState(false);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'data'>('data');
   const [showModalNovo, setShowModalNovo] = useState(false);
   
@@ -205,6 +206,17 @@ const FlowContent = () => {
     onConfirm?: () => void;
     onCancel?: () => void;
   }>({ show: false, tipo: 'aviso', titulo: '', mensagem: '' });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftPressed(true); };
+    const handleKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftPressed(false); };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -294,9 +306,9 @@ const FlowContent = () => {
   }, []);
 
   const onSelectionEnd = useCallback(() => {
-    const selectedNodes = nodesRef.current.filter(n => n.selected);
-    if (selectedNodes.length > 0) centralizarNoPalcoUtil(selectedNodes);
-  }, [centralizarNoPalcoUtil]);
+    // Zoom automático ao finalizar seleção múltipla removido para evitar saltos indesejados durante o uso do Shift
+    // O usuário pode centralizar manualmente clicando em um nó ou usando o botão de Visão Geral
+  }, []);
 
   useEffect(() => {
     const carregarProjetos = async () => {
@@ -452,7 +464,7 @@ const FlowContent = () => {
     
     if (!flowElement || !viewportElement || nodes.length === 0) return;
 
-    addDebugLog('Iniciando exportação PDF (v2.0.53 - Precisão Cirúrgica)...');
+    addDebugLog('Iniciando exportação PDF (v2.0.54 - Precisão Cirúrgica)...');
     setSyncStatus('syncing');
 
     // 1. CALCULAR ÁREA REAL DOS NÓS (Bounding Box exata)
@@ -574,7 +586,7 @@ const FlowContent = () => {
       const timestamp = gerarTimestamp();
       pdf.save(`fluxograma-${projetoAtivo?.nome || 'projeto'}-${timestamp}.pdf`);
       
-      addDebugLog('PDF v2.0.53 gerado com sucesso (Precisão Cirúrgica)!');
+      addDebugLog('PDF v2.0.54 gerado com sucesso (Precisão Cirúrgica)!');
       setSyncStatus('synced');
     } catch (error) {
       console.error('Erro na exportação PDF:', error);
@@ -877,7 +889,7 @@ const FlowContent = () => {
 
   const onNodeDragStart = useCallback(() => { isDragging.current = true; }, []);
   const onNodeDragStop = useCallback((_: any, node: any) => { 
-    setTimeout(() => { isDragging.current = false; }, 100); 
+    setTimeout(() => { isDragging.current = false; }, 50); 
     centralizarNoPalcoUtil([node]);
   }, [centralizarNoPalcoUtil]);
 
@@ -1430,7 +1442,7 @@ const FlowContent = () => {
               onNodeClick={onNodeClick} onEdgeClick={onEdgeClick} onSelectionChange={onSelectionChange} onSelectionEnd={onSelectionEnd}
               onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop}
               onPaneClick={onPaneClick}
-            nodesDraggable={modoEdicao} nodesConnectable={modoEdicao}
+            nodesDraggable={modoEdicao && !shiftPressed} nodesConnectable={modoEdicao}
             snapToGrid={modoEdicao} snapGrid={[20, 20]}
             deleteKeyCode={modoEdicao ? ["Backspace", "Delete"] : null}
             selectionMode={SelectionMode.Partial} selectNodesOnDrag={modoEdicao}
