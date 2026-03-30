@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v2.0.56'; 
+const DEV_VERSION = 'v2.0.61'; 
 const STORAGE_KEY = 'fluxo_agua_v88_deso';
 
 const globalStyles = `
@@ -89,6 +89,24 @@ const globalStyles = `
     transform: translateY(-50%);
     color: #94a3b8;
   }
+  .clear-search-icon {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 50%;
+  }
+  .clear-search-icon:hover {
+    color: #ef4444;
+    background: #fee2e2;
+  }
   
   /* Mobile UI Overrides */
   @media (max-width: 768px) {
@@ -147,7 +165,7 @@ const NodeCustomizado = memo(({ data, selected }: any) => {
       <div style={{ padding: '12px', background: 'white', textAlign: 'center', borderTop: '1px solid #f1f5f9', minHeight: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
         <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', textTransform: 'uppercase' }}>{data.nodeId || ""}</div>
         
-        {data.tipo === 'Tratamento' && (data.concessionaria || data.uc || data.medidor) && (
+        {(data.tipo === 'Tratamento' || data.tipo === 'Captação') && (data.concessionaria || data.uc || data.medidor) && (
           <>
             <div style={{ width: '100%', height: '1px', background: '#94a3b8', margin: '4px 0' }} />
             <div style={{ fontSize: '10px', color: '#334155', textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: '2px', textTransform: 'uppercase', fontWeight: 700 }}>
@@ -178,7 +196,7 @@ const FlowContent = () => {
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [termoPesquisaProjetos, setTermoPesquisaProjetos] = useState('');
   const [termoPesquisaElementos, setTermoPesquisaElementos] = useState('');
-  const [shiftPressed, setShiftPressed] = useState(false);
+  const [ctrlPressed, setCtrlPressed] = useState(false);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'data'>('nome');
   const [showModalNovo, setShowModalNovo] = useState(false);
   
@@ -208,13 +226,18 @@ const FlowContent = () => {
   }>({ show: false, tipo: 'aviso', titulo: '', mensagem: '' });
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftPressed(true); };
-    const handleKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftPressed(false); };
+    const handleKeyDown = (e: KeyboardEvent) => { if (e.key === 'Control') setCtrlPressed(true); };
+    const handleKeyUp = (e: KeyboardEvent) => { if (e.key === 'Control') setCtrlPressed(false); };
+    const handleBlur = () => setCtrlPressed(false);
+    
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, []);
 
@@ -857,8 +880,11 @@ const FlowContent = () => {
     const selectedNodes = nodes.filter(n => n.selected);
     if (selectedNodes.length < 2) return;
     
-    // Alinhamento no eixo Y (média)
-    const avgY = selectedNodes.reduce((acc, n) => acc + n.position.y, 0) / selectedNodes.length;
+    // Alinhamento no eixo Y (média dos centros verticais para alinhar os handles laterais)
+    const avgCenterY = selectedNodes.reduce((acc, n) => {
+      const h = (n as any).height || (n as any).measured?.height || 100;
+      return acc + n.position.y + h / 2;
+    }, 0) / selectedNodes.length;
     
     // Distribuição no eixo X (equidistante com espaçamento mínimo)
     const sortedNodes = [...selectedNodes].sort((a, b) => a.position.x - b.position.x);
@@ -876,7 +902,8 @@ const FlowContent = () => {
     
     const newPositions = new Map();
     sortedNodes.forEach((n, i) => {
-      newPositions.set(n.id, { x: minX + (i * step), y: avgY });
+      const h = (n as any).height || (n as any).measured?.height || 100;
+      newPositions.set(n.id, { x: minX + (i * step), y: avgCenterY - h / 2 });
     });
     
     setNodes(nds => nds.map(n => {
@@ -889,26 +916,27 @@ const FlowContent = () => {
     const selectedNodes = nodes.filter(n => n.selected);
     if (selectedNodes.length < 2) return;
     
-    // Alinhamento no eixo X (média)
-    const avgX = selectedNodes.reduce((acc, n) => acc + n.position.x, 0) / selectedNodes.length;
+    // Alinhamento no eixo X (média dos centros horizontais para alinhar os handles superior/inferior)
+    const avgCenterX = selectedNodes.reduce((acc, n) => {
+      const w = (n as any).width || (n as any).measured?.width || 210;
+      return acc + n.position.x + w / 2;
+    }, 0) / selectedNodes.length;
     
-    // Distribuição no eixo Y (equidistante com espaçamento mínimo)
+    // Distribuição no eixo Y (com espaçamento fixo de 25px entre os nós)
     const sortedNodes = [...selectedNodes].sort((a, b) => a.position.y - b.position.y);
-    const minY = sortedNodes[0].position.y;
-    const maxY = sortedNodes[sortedNodes.length - 1].position.y;
-    const count = sortedNodes.length;
-    
-    const VERTICAL_SPACING = 100; // Altura aproximada do nó + margem
-    let step = (maxY - minY) / (count - 1);
-    
-    // Se os nós estiverem muito próximos ou sobrepostos, força o espaçamento mínimo
-    if (step < VERTICAL_SPACING) {
-      step = VERTICAL_SPACING;
-    }
+    const VERTICAL_GAP = 25;
     
     const newPositions = new Map();
-    sortedNodes.forEach((n, i) => {
-      newPositions.set(n.id, { x: avgX, y: minY + (i * step) });
+    let currentY = sortedNodes[0].position.y;
+    
+    sortedNodes.forEach((n) => {
+      const w = (n as any).width || (n as any).measured?.width || 210;
+      const h = (n as any).height || (n as any).measured?.height || 100;
+      
+      newPositions.set(n.id, { x: avgCenterX - w / 2, y: currentY });
+      
+      // Prepara o Y para o próximo nó
+      currentY += h + VERTICAL_GAP;
     });
     
     setNodes(nds => nds.map(n => {
@@ -1367,6 +1395,11 @@ const FlowContent = () => {
                   value={termoPesquisaProjetos}
                   onChange={(e) => setTermoPesquisaProjetos(e.target.value)}
                 />
+                {termoPesquisaProjetos && (
+                  <div className="clear-search-icon" onClick={() => setTermoPesquisaProjetos('')}>
+                    <X size={14} />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1472,13 +1505,14 @@ const FlowContent = () => {
               onNodeClick={onNodeClick} onEdgeClick={onEdgeClick} onSelectionChange={onSelectionChange} onSelectionEnd={onSelectionEnd}
               onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop}
               onPaneClick={onPaneClick}
-            nodesDraggable={modoEdicao && !shiftPressed} nodesConnectable={modoEdicao}
+            nodesDraggable={modoEdicao && !ctrlPressed} nodesConnectable={modoEdicao}
             snapToGrid={modoEdicao} snapGrid={[20, 20]}
             deleteKeyCode={modoEdicao ? ["Backspace", "Delete"] : null}
             selectionMode={SelectionMode.Partial} selectNodesOnDrag={modoEdicao}
             connectionMode={ConnectionMode.Loose}
-            multiSelectionKeyCode="Shift"
-            selectionKeyCode="Shift"
+            multiSelectionKeyCode="Control"
+            selectionKeyCode={null}
+            panOnDrag={!ctrlPressed}
             panOnScroll={isMobileView}
             zoomOnPinch={true}
             preventScrolling={true}
@@ -1497,6 +1531,11 @@ const FlowContent = () => {
                   onChange={(e) => setTermoPesquisaElementos(e.target.value)}
                   style={{ background: 'white', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', border: 'none' }}
                 />
+                {termoPesquisaElementos && (
+                  <div className="clear-search-icon" onClick={() => setTermoPesquisaElementos('')}>
+                    <X size={14} />
+                  </div>
+                )}
               </div>
             </Panel>
 
@@ -1631,7 +1670,7 @@ const FlowContent = () => {
                   setNodes(nds => nds.map(n => n.id === selecionado.id ? { ...n, data: { ...n.data, nodeId: val } } : n));
                 }} />
               </div>
-              {selecionado.data.tipo === 'Tratamento' && (
+              {(selecionado.data.tipo === 'Tratamento' || selecionado.data.tipo === 'Captação') && (
                 <>
                   <div>
                     <label style={labelSmall}>Concessionária</label>
