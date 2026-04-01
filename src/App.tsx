@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v2.0.68'; 
+const DEV_VERSION = 'v2.0.69'; 
 const STORAGE_KEY = 'fluxo_agua_v88_deso';
 
 const globalStyles = `
@@ -488,15 +488,18 @@ const FlowContent = () => {
     
     if (!flowElement || !viewportElement || nodes.length === 0) return;
 
-    addDebugLog('Iniciando exportação PDF (v2.0.68 - Cobertura Total)...');
+    addDebugLog('Iniciando exportação PDF (v2.0.69 - Bounding Box Ultra)...');
     setSyncStatus('syncing');
 
     // 1. CALCULAR ÁREA REAL DOS NÓS (Bounding Box Robusta)
-    // Usamos as dimensões medidas (measured) se disponíveis, com fallback para valores padrão do CSS
-    const minX = Math.min(...nodes.map(n => n.position.x));
-    const minY = Math.min(...nodes.map(n => n.position.y));
-    const maxX = Math.max(...nodes.map(n => n.position.x + ((n as any).measured?.width || n.width || 210)));
-    const maxY = Math.max(...nodes.map(n => n.position.y + ((n as any).measured?.height || n.height || 180)));
+    // Filtramos nós válidos para evitar erros de cálculo
+    const validNodes = nodes.filter(n => n.position && typeof n.position.x === 'number');
+    if (validNodes.length === 0) return;
+
+    const minX = Math.min(...validNodes.map(n => n.position.x));
+    const minY = Math.min(...validNodes.map(n => n.position.y));
+    const maxX = Math.max(...validNodes.map(n => n.position.x + ((n as any).measured?.width || n.width || 210)));
+    const maxY = Math.max(...validNodes.map(n => n.position.y + ((n as any).measured?.height || n.height || 180)));
     
     const nodesRect = {
       x: minX,
@@ -505,8 +508,9 @@ const FlowContent = () => {
       height: maxY - minY
     };
 
-    const padding = 120; // Aumentado para garantir que setas e bordas não cortem
-    const captureWidth = nodesRect.width + padding * 2;
+    // Padding generoso para não cortar setas que saem dos nós (edges)
+    const padding = 150; 
+    const captureWidth = nodesRect.width + padding * 2.5; // Extra no X para setas finais
     const captureHeight = nodesRect.height + padding * 2;
 
     // 2. PREPARAR ESTILOS DE FORÇA BRUTA
@@ -525,7 +529,8 @@ const FlowContent = () => {
       .react-flow__edge { opacity: 1 !important; visibility: visible !important; }
       .react-flow__node > div { border: 2px solid #000 !important; color: #000 !important; background: #fff !important; }
       .react-flow__edge-path { stroke-width: 6px !important; stroke-opacity: 1 !important; }
-      /* Forçar fontes maiores e consistentes para legibilidade (estilo desktop unificado) */
+      .react-flow__edge { z-index: 1000 !important; }
+      /* Forçar fontes maiores e consistentes para legibilidade */
       .react-flow__node * { font-family: 'Inter', sans-serif !important; }
       .react-flow__node [style*="font-size: 10px"] { font-size: 12px !important; }
       .react-flow__node [style*="font-size: 12px"] { font-size: 14px !important; }
@@ -537,14 +542,14 @@ const FlowContent = () => {
     const originalHeight = flowElement.style.height;
 
     try {
-      // Forçamos o container a ter o tamanho da captura para evitar cortes pelo overflow do container pai
+      // Forçamos o container a ter o tamanho da captura
       flowElement.style.width = `${captureWidth}px`;
       flowElement.style.height = `${captureHeight}px`;
 
-      // Forçamos o viewport a se alinhar EXATAMENTE no início do retângulo dos nós
+      // Alinhamento: centralizamos o conteúdo no container de captura
       viewportElement.style.transform = `translate(${-nodesRect.x + padding}px, ${-nodesRect.y + padding}px) scale(1)`;
       
-      // Forçar espessura das linhas diretamente no DOM antes da captura
+      // Forçar espessura das linhas diretamente no DOM
       const originalEdgeStyles: { el: SVGPathElement, strokeWidth: string, stroke: string }[] = [];
       const edgePaths = flowElement.querySelectorAll('.react-flow__edge-path');
       edgePaths.forEach(path => {
@@ -557,8 +562,8 @@ const FlowContent = () => {
         p.setAttribute('stroke-width', '6');
       });
 
-      // Aguardar renderização dos estilos e transform (tempo aumentado para segurança)
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Aguardar renderização (tempo aumentado para garantir que o React Flow processe o novo tamanho)
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // 4. CAPTURAR
       const dataUrl = await toPng(flowElement, {
@@ -660,7 +665,7 @@ const FlowContent = () => {
       const timestamp = gerarTimestamp();
       pdf.save(`fluxograma-${projetoAtivo?.nome || 'projeto'}-${timestamp}.pdf`);
       
-      addDebugLog('PDF v2.0.68 gerado com sucesso (Cobertura Total)!');
+      addDebugLog('PDF v2.0.69 gerado com sucesso (Bounding Box Ultra)!');
       setSyncStatus('synced');
     } catch (error) {
       console.error('Erro na exportação PDF:', error);
