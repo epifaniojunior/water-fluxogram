@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v2.0.74'; 
+const DEV_VERSION = 'v2.0.75'; 
 const STORAGE_KEY = 'fluxo_agua_v88_deso';
 
 const globalStyles = `
@@ -333,6 +333,10 @@ const FlowContent = () => {
   const onSelectionEnd = useCallback(() => {
     // Zoom automático ao finalizar seleção múltipla removido para evitar saltos indesejados durante o uso do Shift
     // O usuário pode centralizar manualmente clicando em um nó ou usando o botão de Visão Geral
+  }, []);
+
+  useEffect(() => {
+    document.title = `Sistemas de Produção Deso ${DEV_VERSION}`;
   }, []);
 
   useEffect(() => {
