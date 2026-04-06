@@ -17,7 +17,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { 
   X, Droplets, Gauge, Waves, Beaker, Ban, Activity, 
-  FileText, Copy, Droplet, Trash2, Plus, Zap, ArrowDown, MoveRight, Layers, Download, Upload, Clock, Database, ShieldAlert, Cloud, CloudOff, RefreshCw, FileDown, Printer
+  FileText, Copy, Droplet, Trash2, Plus, Zap, ArrowDown, MoveRight, Layers, Download, Upload, Clock, Database, ShieldAlert, Cloud, CloudOff, RefreshCw, FileDown, Printer, Folder, ChevronRight, ChevronDown
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { toPng, toJpeg, toCanvas } from 'html-to-image';
@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v2.0.69'; 
+const DEV_VERSION = 'v2.0.71'; 
 const STORAGE_KEY = 'fluxo_agua_v88_deso';
 
 const globalStyles = `
@@ -198,6 +198,7 @@ const FlowContent = () => {
   const [termoPesquisaElementos, setTermoPesquisaElementos] = useState('');
   const [ctrlPressed, setCtrlPressed] = useState(false);
   const [ordenacao, setOrdenacao] = useState<'nome' | 'data'>('nome');
+  const [categoriasExpandidas, setCategoriasExpandidas] = useState<Record<string, boolean>>({});
   const [showModalNovo, setShowModalNovo] = useState(false);
   
   // Função robusta para detectar se é um dispositivo móvel
@@ -719,6 +720,21 @@ const FlowContent = () => {
     return lista;
   }, [projetos, termoPesquisaProjetos, ordenacao]);
 
+  const projetosAgrupados = useMemo(() => {
+    const grupos: Record<string, Record<string, any[]>> = {};
+    projetosFiltrados.forEach(p => {
+      const partes = p.nome.split(' - ');
+      const categoria = partes.length > 1 ? partes[0].trim() : 'Sem Categoria';
+      const subcategoria = partes.length > 2 ? partes[1].trim() : 'Geral';
+      
+      if (!grupos[categoria]) grupos[categoria] = {};
+      if (!grupos[categoria][subcategoria]) grupos[categoria][subcategoria] = [];
+      
+      grupos[categoria][subcategoria].push(p);
+    });
+    return grupos;
+  }, [projetosFiltrados]);
+
   // Efeito para destacar nós que correspondem à pesquisa de elementos
   useEffect(() => {
     if (!termoPesquisaElementos.trim()) {
@@ -1224,109 +1240,192 @@ const FlowContent = () => {
                 </button>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {projetosFiltrados.map(p => (
-                  <div key={p.id} onClick={() => {
-                    if (projetoAtivoId !== p.id) {
-                      const currentNodes = nodesRef.current;
-                      const currentEdges = edgesRef.current;
-                      setProjetos(prev => prev.map(proj => proj.id === projetoAtivoId ? { ...proj, nodes: currentNodes, edges: currentEdges } : proj));
-                      setProjetoAtivoId(p.id);
-                      if (isMobileView) setShowMobileMenu(false);
-                    }
-                  }} 
-                    style={{ 
-                      ...itemProjeto, 
-                      padding: isMobileView ? '14px' : '10px',
-                      background: projetoAtivoId === p.id ? '#eff6ff' : 'transparent', 
-                      borderColor: projetoAtivoId === p.id ? '#dbeafe' : 'transparent' 
-                    }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden', flex: 1 }}>
-                      <FileText size={18} color={projetoAtivoId === p.id ? '#3b82f6' : '#94a3b8'} />
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: projetoAtivoId === p.id ? '#1e40af' : '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.nome}</span>
-                    </div>
-                    {!isMobileView && (
-                      <div style={{ display: 'flex', gap: '2px' }}>
-                        <button onClick={(e) => { e.stopPropagation(); exportarSistema(p); }} style={btnMini} title="Exportar individual"><Download size={12} /></button>
-                        <button onClick={(e) => { 
-                          e.stopPropagation(); 
-                          if (!modoEdicao) return;
-                          const pCopia = { ...p, id: generateUUID(), nome: `${p.nome} (CÓPIA)`, updated_at: new Date().toISOString() };
-                          
-                          if (supabaseConfigured) {
-                            supabase.from('projetos').insert([pCopia]).select().then(({data, error}) => {
-                              if (error) {
-                                mostrarAviso("Erro ao Copiar", `Erro ao copiar: ${error.message}`);
-                                return;
-                              }
-                              if (data) {
-                                setProjetos([...projetos, data[0]]);
-                                setProjetoAtivoId(data[0].id);
-                              }
-                            });
-                          } else {
-                            setProjetos([...projetos, pCopia]);
-                            setProjetoAtivoId(pCopia.id);
-                          }
-                        }} 
-                        style={{ 
-                          ...btnMini, 
-                          opacity: modoEdicao ? 1 : 0.4, 
-                          cursor: modoEdicao ? 'pointer' : 'not-allowed' 
-                        }} 
-                        title={modoEdicao ? "Copiar" : "Modo Edição necessário para copiar"}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {(Object.entries(projetosAgrupados) as [string, Record<string, any[]>][]).map(([categoria, subgrupos]) => {
+                  const estaExpandida = categoriasExpandidas[categoria] !== false;
+                  const totalProjetos = Object.values(subgrupos).reduce((acc, curr) => acc + curr.length, 0);
+                  
+                  return (
+                    <div key={categoria} style={{ marginBottom: '4px' }}>
+                      <div 
+                        onClick={() => setCategoriasExpandidas(prev => ({ ...prev, [categoria]: !estaExpandida }))}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px 10px',
+                          cursor: 'pointer',
+                          borderRadius: '8px',
+                          background: '#f8fafc',
+                          border: '1px solid #f1f5f9',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = '#f8fafc'}
                       >
-                        <Copy size={12} />
-                      </button>
-                        <button onClick={(e) => { 
-                          e.stopPropagation(); 
-                          if (!modoEdicao) return;
-                          if (projetos.length > 1) { 
-                            mostrarConfirmacao(
-                              "Excluir Sistema",
-                              `Deseja realmente excluir o sistema "${p.nome}"? Esta ação não pode ser desfeita.`,
-                              () => {
-                                if (supabaseConfigured) {
-                                  supabase.from('projetos').delete().eq('id', p.id).then(({ error }) => {
-                                    if (error) {
-                                      mostrarAviso("Erro ao Excluir", `Erro ao excluir na nuvem: ${error.message}`);
-                                      return;
-                                    }
-                                    setProjetos(prev => {
-                                      const novos = prev.filter(x => x.id !== p.id); 
-                                      if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
-                                      return novos;
-                                    });
-                                    addDebugLog(`Projeto excluído: ${p.nome}`);
-                                  });
-                                } else {
-                                  setProjetos(prev => {
-                                    const novos = prev.filter(x => x.id !== p.id); 
-                                    if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
-                                    return novos;
-                                  });
-                                  addDebugLog(`Projeto local excluído: ${p.nome}`);
-                                }
-                              }
-                            );
-                          } else {
-                            mostrarAviso("Atenção", "Não é possível excluir o último sistema. É necessário ter ao menos um sistema ativo.");
-                          }
-                        }} 
-                        style={{ 
-                          ...btnMini, 
-                          color: '#ef4444',
-                          opacity: modoEdicao ? 1 : 0.4, 
-                          cursor: modoEdicao ? 'pointer' : 'not-allowed' 
-                        }} 
-                        title={modoEdicao ? "Apagar" : "Modo Edição necessário para apagar"}
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                        {estaExpandida ? <ChevronDown size={14} color="#64748b" /> : <ChevronRight size={14} color="#64748b" />}
+                        <Folder size={16} color="#3b82f6" fill="#eff6ff" />
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', flex: 1 }}>
+                          {categoria}
+                        </span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', background: '#fff', padding: '2px 6px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                          {totalProjetos}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      
+                      {estaExpandida && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '12px', borderLeft: '1px dashed #e2e8f0', marginLeft: '16px', marginTop: '6px' }}>
+                          {Object.entries(subgrupos).map(([subcat, lista]) => {
+                            const subKey = `${categoria}|${subcat}`;
+                            const subExpandida = categoriasExpandidas[subKey] !== false;
+                            
+                            return (
+                              <div key={subcat}>
+                                <div 
+                                  onClick={() => setCategoriasExpandidas(prev => ({ ...prev, [subKey]: !subExpandida }))}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '4px 8px',
+                                    cursor: 'pointer',
+                                    borderRadius: '6px',
+                                    background: subExpandida ? '#f1f5f9' : 'transparent',
+                                    transition: 'all 0.2s'
+                                  }}
+                                >
+                                  {subExpandida ? <ChevronDown size={12} color="#94a3b8" /> : <ChevronRight size={12} color="#94a3b8" />}
+                                  <span style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                                    {subcat}
+                                  </span>
+                                  <span style={{ fontSize: '9px', color: '#cbd5e1', marginLeft: 'auto' }}>({lista.length})</span>
+                                </div>
+                                
+                                {subExpandida && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '2px', marginBottom: '6px' }}>
+                                    {lista.map(p => (
+                                      <div key={p.id} onClick={() => {
+                                        if (projetoAtivoId !== p.id) {
+                                          const currentNodes = nodesRef.current;
+                                          const currentEdges = edgesRef.current;
+                                          setProjetos(prev => prev.map(proj => proj.id === projetoAtivoId ? { ...proj, nodes: currentNodes, edges: currentEdges } : proj));
+                                          setProjetoAtivoId(p.id);
+                                          if (isMobileView) setShowMobileMenu(false);
+                                        }
+                                      }} 
+                                        style={{ 
+                                          ...itemProjeto, 
+                                          padding: isMobileView ? '14px' : '6px 10px',
+                                          background: projetoAtivoId === p.id ? '#eff6ff' : 'transparent', 
+                                          borderColor: projetoAtivoId === p.id ? '#dbeafe' : 'transparent',
+                                          marginBottom: 0,
+                                          borderRadius: '6px'
+                                        }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
+                                          <span style={{ 
+                                            fontSize: '11px', 
+                                            fontWeight: projetoAtivoId === p.id ? 700 : 500, 
+                                            color: projetoAtivoId === p.id ? '#1e40af' : '#475569', 
+                                            whiteSpace: 'nowrap', 
+                                            overflow: 'hidden', 
+                                            textOverflow: 'ellipsis',
+                                            paddingLeft: '18px'
+                                          }}>
+                                            {p.nome.split(' - ').length > 2 ? p.nome.split(' - ').slice(2).join(' - ') : p.nome}
+                                          </span>
+                                        </div>
+                                        {!isMobileView && (
+                                          <div style={{ display: 'flex', gap: '2px' }}>
+                                            <button onClick={(e) => { e.stopPropagation(); exportarSistema(p); }} style={btnMini} title="Exportar individual"><Download size={12} /></button>
+                                            <button onClick={(e) => { 
+                                              e.stopPropagation(); 
+                                              if (!modoEdicao) return;
+                                              const pCopia = { ...p, id: generateUUID(), nome: `${p.nome} (CÓPIA)`, updated_at: new Date().toISOString() };
+                                              
+                                              if (supabaseConfigured) {
+                                                supabase.from('projetos').insert([pCopia]).select().then(({data, error}) => {
+                                                  if (error) {
+                                                    mostrarAviso("Erro ao Copiar", `Erro ao copiar: ${error.message}`);
+                                                    return;
+                                                  }
+                                                  if (data) {
+                                                    setProjetos([...projetos, data[0]]);
+                                                    setProjetoAtivoId(data[0].id);
+                                                  }
+                                                });
+                                              } else {
+                                                setProjetos([...projetos, pCopia]);
+                                                setProjetoAtivoId(pCopia.id);
+                                              }
+                                            }} 
+                                            style={{ 
+                                              ...btnMini, 
+                                              opacity: modoEdicao ? 1 : 0.4, 
+                                              cursor: modoEdicao ? 'pointer' : 'not-allowed' 
+                                            }} 
+                                            title={modoEdicao ? "Copiar" : "Modo Edição necessário para copiar"}
+                                          >
+                                            <Copy size={12} />
+                                          </button>
+                                            <button onClick={(e) => { 
+                                              e.stopPropagation(); 
+                                              if (!modoEdicao) return;
+                                              if (projetos.length > 1) { 
+                                                mostrarConfirmacao(
+                                                  "Excluir Sistema",
+                                                  `Deseja realmente excluir o sistema "${p.nome}"? Esta ação não pode ser desfeita.`,
+                                                  () => {
+                                                    if (supabaseConfigured) {
+                                                      supabase.from('projetos').delete().eq('id', p.id).then(({ error }) => {
+                                                        if (error) {
+                                                          mostrarAviso("Erro ao Excluir", `Erro ao excluir na nuvem: ${error.message}`);
+                                                          return;
+                                                        }
+                                                        setProjetos(prev => {
+                                                          const novos = prev.filter(x => x.id !== p.id); 
+                                                          if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
+                                                          return novos;
+                                                        });
+                                                        addDebugLog(`Projeto excluído: ${p.nome}`);
+                                                      });
+                                                    } else {
+                                                      setProjetos(prev => {
+                                                        const novos = prev.filter(x => x.id !== p.id); 
+                                                        if (projetoAtivoId === p.id) setProjetoAtivoId(novos[0].id);
+                                                        return novos;
+                                                      });
+                                                      addDebugLog(`Projeto local excluído: ${p.nome}`);
+                                                    }
+                                                  }
+                                                );
+                                              } else {
+                                                mostrarAviso("Atenção", "Não é possível excluir o último sistema. É necessário ter ao menos um sistema ativo.");
+                                              }
+                                            }} 
+                                            style={{ 
+                                              ...btnMini, 
+                                              color: '#ef4444',
+                                              opacity: modoEdicao ? 1 : 0.4, 
+                                              cursor: modoEdicao ? 'pointer' : 'not-allowed' 
+                                            }} 
+                                            title={modoEdicao ? "Apagar" : "Modo Edição necessário para apagar"}
+                                          >
+                                            <Trash2 size={12} />
+                                          </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
