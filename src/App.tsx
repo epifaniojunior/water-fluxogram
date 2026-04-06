@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v2.0.72'; 
+const DEV_VERSION = 'v2.0.73'; 
 const STORAGE_KEY = 'fluxo_agua_v88_deso';
 
 const globalStyles = `
@@ -723,17 +723,11 @@ const FlowContent = () => {
   const projetosAgrupados = useMemo(() => {
     const grupos: Record<string, Record<string, any[]>> = {};
     projetosFiltrados.forEach(p => {
-      const partes = p.nome.split(' - ');
-      const categoria = partes.length > 1 ? partes[0].trim() : 'Sem Categoria';
+      // Divide por espaços ou hifens, removendo itens vazios
+      const partes = p.nome.split(/[\s-]+/).filter(Boolean);
       
-      let subcategoria = 'Geral';
-      if (partes.length > 1) {
-        const resto = partes.slice(1).join(' - ').trim();
-        const palavrasResto = resto.split(' ');
-        if (palavrasResto.length > 0) {
-          subcategoria = palavrasResto[0];
-        }
-      }
+      const categoria = partes.length > 0 ? partes[0].trim() : 'Sem Categoria';
+      const subcategoria = partes.length > 1 ? partes[1].trim() : 'Geral';
       
       if (!grupos[categoria]) grupos[categoria] = {};
       if (!grupos[categoria][subcategoria]) grupos[categoria][subcategoria] = [];
@@ -1340,15 +1334,9 @@ const FlowContent = () => {
                                             paddingLeft: '18px'
                                           }}>
                                             {(() => {
-                                              const partes = p.nome.split(' - ');
-                                              if (partes.length > 1) {
-                                                const resto = partes.slice(1).join(' - ').trim();
-                                                const palavrasResto = resto.split(' ');
-                                                if (palavrasResto.length > 1) {
-                                                  return palavrasResto.slice(1).join(' ');
-                                                }
-                                                return resto;
-                                              }
+                                              const partes = p.nome.split(/[\s-]+/).filter(Boolean);
+                                              if (partes.length > 2) return partes.slice(2).join(' ');
+                                              if (partes.length === 2) return partes[1];
                                               return p.nome;
                                             })()}
                                           </span>
