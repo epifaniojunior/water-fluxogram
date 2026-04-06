@@ -26,7 +26,7 @@ import { jsPDF } from 'jspdf';
 // ==========================================
 // CONFIGURAÇÃO DE VERSÃO DE DESENVOLVIMENTO
 // ==========================================
-const DEV_VERSION = 'v2.0.71'; 
+const DEV_VERSION = 'v2.0.72'; 
 const STORAGE_KEY = 'fluxo_agua_v88_deso';
 
 const globalStyles = `
@@ -725,7 +725,15 @@ const FlowContent = () => {
     projetosFiltrados.forEach(p => {
       const partes = p.nome.split(' - ');
       const categoria = partes.length > 1 ? partes[0].trim() : 'Sem Categoria';
-      const subcategoria = partes.length > 2 ? partes[1].trim() : 'Geral';
+      
+      let subcategoria = 'Geral';
+      if (partes.length > 1) {
+        const resto = partes.slice(1).join(' - ').trim();
+        const palavrasResto = resto.split(' ');
+        if (palavrasResto.length > 0) {
+          subcategoria = palavrasResto[0];
+        }
+      }
       
       if (!grupos[categoria]) grupos[categoria] = {};
       if (!grupos[categoria][subcategoria]) grupos[categoria][subcategoria] = [];
@@ -1331,7 +1339,18 @@ const FlowContent = () => {
                                             textOverflow: 'ellipsis',
                                             paddingLeft: '18px'
                                           }}>
-                                            {p.nome.split(' - ').length > 2 ? p.nome.split(' - ').slice(2).join(' - ') : p.nome}
+                                            {(() => {
+                                              const partes = p.nome.split(' - ');
+                                              if (partes.length > 1) {
+                                                const resto = partes.slice(1).join(' - ').trim();
+                                                const palavrasResto = resto.split(' ');
+                                                if (palavrasResto.length > 1) {
+                                                  return palavrasResto.slice(1).join(' ');
+                                                }
+                                                return resto;
+                                              }
+                                              return p.nome;
+                                            })()}
                                           </span>
                                         </div>
                                         {!isMobileView && (
